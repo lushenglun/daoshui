@@ -1,0 +1,997 @@
+{
+  "chapterId": 1,
+  "chapterName": "清新夏日",
+  "unlockLevel": 1,
+  "theme": {
+    "backgroundColor": "#E8F6F3",
+    "bottleStyle": "glass",
+    "liquidStyle": "solid"
+  },
+  "colorPalette": [
+    "#FF6B6B",
+    "#4ECDC4",
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7",
+    "#DDA0DD",
+    "#98D8C8",
+    "#F7DC6F"
+  ],
+  "levels": [
+    {
+      "levelId": 1,
+      "difficulty": 1,
+      "bottleCount": 4,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 2,
+      "initialState": [
+        [
+          1,
+          1,
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [],
+        [
+          1,
+          2
+        ]
+      ],
+      "minSteps": 4,
+      "targetSteps": 6,
+      "tutorial": true,
+      "tutorialText": "点击一个瓶子，再点击另一个瓶子来倒水。把相同颜色的水倒在一起！"
+    },
+    {
+      "levelId": 2,
+      "difficulty": 1,
+      "bottleCount": 4,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 2,
+      "initialState": [
+        [
+          1,
+          1,
+          2,
+          1
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          2,
+          2
+        ],
+        []
+      ],
+      "minSteps": 4,
+      "targetSteps": 6,
+      "tutorial": true,
+      "tutorialText": "空瓶子可以作为临时中转站哦！"
+    },
+    {
+      "levelId": 3,
+      "difficulty": 2,
+      "bottleCount": 5,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 2,
+      "initialState": [
+        [
+          1,
+          1,
+          1,
+          3
+        ],
+        [
+          2,
+          2,
+          2,
+          3
+        ],
+        [
+          3
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "minSteps": 5,
+      "targetSteps": 7,
+      "tutorial": false
+    },
+    {
+      "levelId": 4,
+      "difficulty": 2,
+      "bottleCount": 5,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 2,
+      "initialState": [
+        [
+          1,
+          1,
+          1
+        ],
+        [
+          2,
+          2,
+          3
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          2
+        ],
+        [
+          2,
+          3,
+          1
+        ]
+      ],
+      "minSteps": 5,
+      "targetSteps": 7,
+      "tutorial": false
+    },
+    {
+      "levelId": 5,
+      "difficulty": 2,
+      "bottleCount": 5,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 2,
+      "initialState": [
+        [
+          1,
+          2,
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3
+        ],
+        [
+          3
+        ],
+        [
+          3,
+          3,
+          1,
+          1
+        ]
+      ],
+      "minSteps": 6,
+      "targetSteps": 8,
+      "tutorial": false
+    },
+    {
+      "levelId": 6,
+      "difficulty": 2,
+      "bottleCount": 6,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          3,
+          3,
+          2,
+          1
+        ],
+        []
+      ],
+      "minSteps": 6,
+      "targetSteps": 8,
+      "tutorial": false
+    },
+    {
+      "levelId": 7,
+      "difficulty": 2,
+      "bottleCount": 6,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1,
+          3
+        ],
+        [
+          3
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          2,
+          2,
+          2
+        ],
+        []
+      ],
+      "minSteps": 4,
+      "targetSteps": 6,
+      "tutorial": false
+    },
+    {
+      "levelId": 8,
+      "difficulty": 2,
+      "bottleCount": 6,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          3,
+          3
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [],
+        [
+          3,
+          2,
+          1
+        ],
+        []
+      ],
+      "minSteps": 7,
+      "targetSteps": 9,
+      "tutorial": false
+    },
+    {
+      "levelId": 9,
+      "difficulty": 2,
+      "bottleCount": 6,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1
+        ],
+        [
+          2,
+          2,
+          1
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          1,
+          1,
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "minSteps": 6,
+      "targetSteps": 8,
+      "tutorial": false
+    },
+    {
+      "levelId": 10,
+      "difficulty": 2,
+      "bottleCount": 6,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          2
+        ],
+        [
+          2,
+          2,
+          3,
+          3
+        ],
+        [
+          3,
+          3
+        ],
+        [],
+        [
+          1,
+          2,
+          1
+        ],
+        []
+      ],
+      "minSteps": 5,
+      "targetSteps": 7,
+      "tutorial": false
+    },
+    {
+      "levelId": 11,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          2,
+          2,
+          3
+        ],
+        [],
+        [],
+        [
+          4,
+          2,
+          4
+        ],
+        [
+          2,
+          4,
+          4,
+          3
+        ],
+        [
+          3,
+          3
+        ]
+      ],
+      "minSteps": 6,
+      "targetSteps": 8,
+      "tutorial": false
+    },
+    {
+      "levelId": 12,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          3,
+          4,
+          4
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3,
+          3,
+          2
+        ],
+        [],
+        [],
+        [
+          1,
+          1,
+          2
+        ],
+        [
+          1,
+          4,
+          4
+        ]
+      ],
+      "minSteps": 7,
+      "targetSteps": 9,
+      "tutorial": false
+    },
+    {
+      "levelId": 13,
+      "difficulty": 4,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          2,
+          2,
+          3
+        ],
+        [],
+        [
+          4,
+          4,
+          2
+        ],
+        [
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          1,
+          1,
+          4,
+          3
+        ]
+      ],
+      "minSteps": 8,
+      "targetSteps": 10,
+      "tutorial": false
+    },
+    {
+      "levelId": 14,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          3,
+          2
+        ],
+        [
+          2,
+          2,
+          4,
+          4
+        ],
+        [
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          3,
+          2
+        ],
+        [],
+        [
+          1,
+          1,
+          3
+        ]
+      ],
+      "minSteps": 7,
+      "targetSteps": 9,
+      "tutorial": false
+    },
+    {
+      "levelId": 15,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          1,
+          1,
+          3
+        ],
+        [
+          4,
+          4,
+          4,
+          3
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          2,
+          2
+        ],
+        []
+      ],
+      "minSteps": 6,
+      "targetSteps": 8,
+      "tutorial": false
+    },
+    {
+      "levelId": 16,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          4
+        ],
+        [
+          2
+        ],
+        [
+          3,
+          2,
+          2
+        ],
+        [
+          4
+        ],
+        [
+          2,
+          3,
+          1,
+          1
+        ],
+        [],
+        [
+          3,
+          3,
+          4,
+          4
+        ]
+      ],
+      "minSteps": 7,
+      "targetSteps": 9,
+      "tutorial": false
+    },
+    {
+      "levelId": 17,
+      "difficulty": 4,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          4
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3
+        ],
+        [
+          4,
+          4,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4,
+          3
+        ]
+      ],
+      "minSteps": 9,
+      "targetSteps": 11,
+      "tutorial": false
+    },
+    {
+      "levelId": 18,
+      "difficulty": 4,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          4,
+          1
+        ],
+        [
+          2,
+          2,
+          2
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          1,
+          3,
+          1,
+          4
+        ],
+        [
+          1,
+          4,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        []
+      ],
+      "minSteps": 9,
+      "targetSteps": 11,
+      "tutorial": false
+    },
+    {
+      "levelId": 19,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          3
+        ],
+        [],
+        [
+          3,
+          3,
+          4
+        ],
+        [
+          4,
+          4,
+          4
+        ],
+        [
+          2,
+          2,
+          3,
+          2
+        ],
+        [],
+        [
+          2,
+          1,
+          1
+        ]
+      ],
+      "minSteps": 6,
+      "targetSteps": 8,
+      "tutorial": false
+    },
+    {
+      "levelId": 20,
+      "difficulty": 3,
+      "bottleCount": 7,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2,
+          2,
+          4
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          4,
+          3,
+          3
+        ],
+        [
+          1,
+          3,
+          4,
+          2
+        ],
+        [],
+        []
+      ],
+      "minSteps": 7,
+      "targetSteps": 9,
+      "tutorial": false
+    },
+    {
+      "levelId": 21,
+      "difficulty": 5,
+      "bottleCount": 8,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2,
+          2,
+          5
+        ],
+        [],
+        [
+          5,
+          3,
+          3
+        ],
+        [
+          5
+        ],
+        [
+          2,
+          4,
+          4,
+          1
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          3,
+          3,
+          4,
+          4
+        ]
+      ],
+      "minSteps": 9,
+      "targetSteps": 11,
+      "tutorial": false
+    },
+    {
+      "levelId": 22,
+      "difficulty": 5,
+      "bottleCount": 8,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [],
+        [
+          2,
+          3,
+          3,
+          2
+        ],
+        [
+          3,
+          3,
+          4
+        ],
+        [
+          4,
+          4,
+          4
+        ],
+        [
+          5,
+          5,
+          5,
+          5
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "minSteps": 7,
+      "targetSteps": 9,
+      "tutorial": false
+    },
+    {
+      "levelId": 23,
+      "difficulty": 5,
+      "bottleCount": 8,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3,
+          3,
+          5
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          5
+        ],
+        [
+          3
+        ],
+        [
+          5,
+          2,
+          4,
+          1
+        ],
+        [
+          4,
+          4,
+          5
+        ]
+      ],
+      "minSteps": 9,
+      "targetSteps": 11,
+      "tutorial": false
+    },
+    {
+      "levelId": 24,
+      "difficulty": 5,
+      "bottleCount": 8,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          5
+        ],
+        [
+          2,
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          3,
+          3,
+          1
+        ],
+        [
+          4
+        ],
+        [
+          5,
+          5,
+          5
+        ],
+        [
+          2,
+          2,
+          4
+        ],
+        [
+          1,
+          4
+        ],
+        []
+      ],
+      "minSteps": 8,
+      "targetSteps": 10,
+      "tutorial": false
+    },
+    {
+      "levelId": 25,
+      "difficulty": 5,
+      "bottleCount": 8,
+      "bottleCapacity": 4,
+      "emptyBottleCount": 3,
+      "initialState": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          2
+        ],
+        [
+          4,
+          3,
+          2
+        ],
+        [
+          4,
+          4,
+          5,
+          5
+        ],
+        [
+          5,
+          2,
+          3
+        ],
+        [],
+        [
+          5
+        ],
+        [
+          4,
+          3,
+          3,
+          2
+        ]
+      ],
+      "minSteps": 10,
+      "targetSteps": 12,
+      "tutorial": false
+    }
+  ]
+}
