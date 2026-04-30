@@ -17,6 +17,10 @@ import { Bottle } from '../Gameplay/Bottle';
 import { LevelManager } from '../Gameplay/LevelManager';
 import { PourController } from '../Gameplay/PourController';
 import { StorageManager } from './StorageManager';
+import { SDKManager } from './SDKManager';
+import { CloudSaveManager } from '../WeChat/CloudSaveManager';
+import { RankEntry, RankManager } from '../WeChat/RankManager';
+import { ShareManager } from '../WeChat/ShareManager';
 import { WXAPI } from '../WeChat/WXAPI';
 
 const { ccclass } = _decorator;
@@ -57,6 +61,7 @@ export class GameManager extends Component {
 
     start(): void {
         this.showMainMenu();
+        SDKManager.initialize();
         const save = StorageManager.load();
         if (!save.flags.hasShownAgeTip) {
             save.flags.hasShownAgeTip = true;
@@ -98,14 +103,17 @@ export class GameManager extends Component {
             void this.showLevelSelect();
         });
         this.createQuickMenuButton('签到', new Vec3(-210, -72, 0), () => this.handleDailyCheckIn());
-        this.createQuickMenuButton('排行', new Vec3(-70, -72, 0), () => this.showInfoPanel('排行榜', '好友排行榜将在微信开放数据域接入后启用。'));
+        this.createQuickMenuButton('排行', new Vec3(-70, -72, 0), () => this.showRankPanel());
         this.createQuickMenuButton('设置', new Vec3(70, -72, 0), () => this.showSettingsPanel(GameState.MAIN_MENU));
         this.createQuickMenuButton('商店', new Vec3(210, -72, 0), () => this.showInfoPanel('主题商店', '主题商店将在美术资源接入后开放。'));
         this.createButton(this.viewRoot, '每日挑战', new Vec3(-130, -210, 0), 200, 58, '#FFFFFF', () => this.showInfoPanel('每日挑战', '每日挑战将在后续版本开放，所有玩家挑战同一关。'));
         this.createButton(this.viewRoot, '成就', new Vec3(130, -210, 0), 200, 58, '#FFFFFF', () => this.showInfoPanel('成就', this.getAchievementSummary()));
+        this.createButton(this.viewRoot, '分享求助', new Vec3(0, -292, 0), 220, 58, '#FFEAA7', () => {
+            void this.handleMainShare();
+        });
 
-        this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -300, 0), new Color(64, 82, 90));
-        this.createLabel(this.viewRoot, 'v0.2 单局体验版', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
+        this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -374, 0), new Color(64, 82, 90));
+        this.createLabel(this.viewRoot, 'v0.3 微信测试版 (cloudlog)', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
     }
 
     private async showLevelSelect(): Promise<void> {
@@ -433,12 +441,13 @@ export class GameManager extends Component {
         }
 
         const result = StorageManager.completeLevel(level.levelId, this.levelManager.steps, level.minSteps);
+        void CloudSaveManager.uploadSave();
 
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 85, true);
         const popup = this.createPanel(this.popupLayer, new Vec3(0, 0, 0), 520, 600, '#FFFFFF', 24, 255, true);
         popup.setScale(new Vec3(0.75, 0.75, 1));
         this.createLabel(popup, '通关成功', 46, new Vec3(0, 210, 0), new Color(45, 52, 54));
-        this.createLabel(popup, '★'.repeat(result.stars), 52, new Vec3(0, 136, 0), new Color(255, 193, 7));
+        this.createStarRating(popup, result.stars, new Vec3(0, 136, 0));
         this.createLabel(popup, `步数 ${this.levelManager.steps} / 最优 ${level.minSteps}`, 28, new Vec3(0, 66, 0), new Color(83, 103, 112));
         this.createLabel(popup, `获得金币 +${result.coins}`, 30, new Vec3(0, -4, 0), new Color(235, 154, 35));
         const rewardNotice = this.createLabel(popup, '', 18, new Vec3(0, -58, 0), new Color(120, 132, 140), 420);
@@ -449,7 +458,10 @@ export class GameManager extends Component {
             this.popupLayer?.removeAllChildren();
             this.startLevel(level.levelId + 1);
         });
-        this.createButton(popup, '返回选关', new Vec3(0, -210, 0), 220, 58, '#EAF4F4', () => {
+        this.createButton(popup, '分享炫耀', new Vec3(-125, -210, 0), 210, 58, '#E8F6F3', () => {
+            void this.handleResultShare(level.levelId, this.levelManager.steps, result.stars, rewardNotice);
+        }, new Color(45, 52, 54));
+        this.createButton(popup, '返回选关', new Vec3(125, -210, 0), 210, 58, '#EAF4F4', () => {
             this.popupLayer?.removeAllChildren();
             void this.showLevelSelect();
         }, new Color(45, 52, 54));
@@ -524,14 +536,17 @@ export class GameManager extends Component {
         this.createToggleRow(panel, '音乐', new Vec3(0, 165, 0), save.settings.musicEnabled, (enabled) => {
             save.settings.musicEnabled = enabled;
             StorageManager.save(save);
+            void CloudSaveManager.uploadSave();
         });
         this.createToggleRow(panel, '音效', new Vec3(0, 82, 0), save.settings.soundEnabled, (enabled) => {
             save.settings.soundEnabled = enabled;
             StorageManager.save(save);
+            void CloudSaveManager.uploadSave();
         });
         this.createToggleRow(panel, '震动', new Vec3(0, -1, 0), save.settings.vibrationEnabled, (enabled) => {
             save.settings.vibrationEnabled = enabled;
             StorageManager.save(save);
+            void CloudSaveManager.uploadSave();
         });
 
         this.createPanel(panel, new Vec3(0, -62, 0), 440, 2, '#E8F6F3', 1);
@@ -539,6 +554,9 @@ export class GameManager extends Component {
         this.createButton(panel, '隐私协议', new Vec3(0, -192, 0), 400, 58, '#F8F9FA', () => this.showInfoPanel('隐私协议', '隐私协议将在微信小游戏发布前接入正式页面。'));
         this.createButton(panel, '去广告特权 ¥6.00', new Vec3(0, -262, 0), 400, 58, '#FFEAA7', () => this.showInfoPanel('去广告特权', '内购将在微信支付接入后开放。'));
         this.createButton(panel, 'GM', new Vec3(-198, -306, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
+        this.createButton(panel, '同步', new Vec3(-106, -306, 0), 74, 42, '#E8F6F3', () => {
+            void this.handleManualSync();
+        });
         this.createLabel(panel, `版本 ${GAME_CONFIG.VERSION}`, 20, new Vec3(32, -306, 0), new Color(178, 190, 195), 260);
 
         tween(panel).to(0.24, { scale: Vec3.ONE }).start();
@@ -596,6 +614,62 @@ export class GameManager extends Component {
         tween(panel).to(0.2, { scale: Vec3.ONE }).start();
     }
 
+    private showRankPanel(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        this.state = GameState.MAIN_MENU;
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 88, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 540, 620, '#FFFFFF', 24, 255, true);
+        panel.setScale(new Vec3(0.86, 0.86, 1));
+        this.createLabel(panel, '好友排行', 42, new Vec3(0, 250, 0), new Color(45, 52, 54));
+        this.createButton(panel, '好友', new Vec3(-96, 184, 0), 150, 54, '#4ECDC4', () => this.showRankPanel());
+        this.createButton(panel, '周排行', new Vec3(96, 184, 0), 150, 54, '#E8F6F3', () => {
+            this.showInfoPanel('周排行', '周排行将在开放数据域周榜字段接入后启用。');
+        }, new Color(45, 52, 54));
+
+        const entries = RankManager.openFriendRank();
+        this.createRankRows(panel, entries);
+        this.createLabel(panel, WXAPI.available ? '微信开放数据域绘制中' : '编辑器预览数据', 20, new Vec3(0, -202, 0), new Color(120, 140, 148), 420);
+        this.createButton(panel, '返回', new Vec3(0, -258, 0), 200, 58, '#E8F6F3', () => {
+            RankManager.closeRank();
+            this.popupLayer?.removeAllChildren();
+            this.state = GameState.MAIN_MENU;
+        }, new Color(45, 52, 54));
+        tween(panel).to(0.2, { scale: Vec3.ONE }).start();
+    }
+
+    private createRankRows(parent: Node, entries: RankEntry[]): void {
+        entries.slice(0, 5).forEach((entry, index) => {
+            const y = 112 - index * 66;
+            const row = this.createPanel(parent, new Vec3(0, y, 0), 430, 54, entry.isSelf ? '#E8F6F3' : '#F8F9FA', 16, 255, true);
+            this.createLabel(row, `${index + 1}`, 24, new Vec3(-178, 0, 0), new Color(83, 103, 112), 44);
+            this.createLabel(row, entry.nickname, 24, new Vec3(-70, 0, 0), new Color(45, 52, 54), 160);
+            this.createLabel(row, `${entry.stars}星`, 24, new Vec3(70, 0, 0), new Color(235, 154, 35), 100);
+            this.createLabel(row, `关卡${entry.level}`, 22, new Vec3(158, 0, 0), new Color(83, 103, 112), 110);
+        });
+    }
+
+    private async handleMainShare(): Promise<void> {
+        const save = StorageManager.load();
+        const result = await ShareManager.share('main_help', { levelId: save.currentLevel });
+        WXAPI.showToast(result.message, result.rewarded ? 'success' : 'none');
+        this.showMainMenu();
+    }
+
+    private async handleResultShare(levelId: number, steps: number, stars: number, notice: Label): Promise<void> {
+        const result = await ShareManager.share('result_showoff', { levelId, steps, stars });
+        notice.string = result.message;
+    }
+
+    private async handleManualSync(): Promise<void> {
+        const success = await SDKManager.loginAndSync();
+        WXAPI.showToast(success ? '登录与云同步完成' : '正在同步或同步失败', success ? 'success' : 'none');
+        this.showSettingsPanel(this.previousStateBeforeSettings);
+    }
+
     private showGmPanel(): void {
         if (!this.popupLayer) {
             return;
@@ -630,6 +704,7 @@ export class GameManager extends Component {
 
     private resetSaveAndReturn(): void {
         StorageManager.resetToDefault();
+        void CloudSaveManager.uploadSave();
         this.popupLayer?.removeAllChildren();
         this.showMainMenu();
         this.showInfoPanel('存档已重置', '测试存档已恢复到初始状态。再次开始游戏会从第1关进入。');
@@ -685,6 +760,55 @@ export class GameManager extends Component {
         this.createButton(this.viewRoot, text, position, 104, 74, '#FFFFFF', onClick, new Color(45, 52, 54));
     }
 
+    private createStarRating(parent: Node, earnedStars: number, position: Vec3): void {
+        const spacing = 80;
+        const startX = -spacing;
+
+        for (let i = 0; i < 3; i += 1) {
+            const x = startX + i * spacing;
+            this.createLabel(parent, '☆', 64, new Vec3(position.x + x, position.y, 0), new Color(178, 190, 195), 76);
+
+            if (i >= earnedStars) {
+                continue;
+            }
+
+            const star = this.createLabel(parent, '★', 64, new Vec3(position.x + x, position.y, 0), new Color(255, 193, 7), 76);
+            const starNode = star.node;
+            starNode.setScale(Vec3.ZERO);
+            const delay = 0.5 + i * GAME_CONFIG.ANIMATION.STAR_INTERVAL;
+
+            tween(starNode)
+                .delay(delay)
+                .to(0.25, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'backOut' })
+                .to(0.15, { scale: Vec3.ONE }, { easing: 'quadOut' })
+                .call(() => this.playStarSparkles(starNode))
+                .start();
+        }
+    }
+
+    private playStarSparkles(parent: Node): void {
+        const sparklePositions = [
+            new Vec3(0, 46, 0),
+            new Vec3(38, 26, 0),
+            new Vec3(38, -24, 0),
+            new Vec3(0, -44, 0),
+            new Vec3(-38, -24, 0),
+            new Vec3(-38, 26, 0),
+        ];
+
+        sparklePositions.forEach((target, index) => {
+            const sparkle = this.createLabel(parent, '✦', 18, Vec3.ZERO, new Color(255, 224, 130), 24);
+            const node = sparkle.node;
+            node.setScale(Vec3.ZERO);
+            tween(node)
+                .delay(index * 0.025)
+                .to(0.12, { position: target, scale: new Vec3(0.9, 0.9, 1) }, { easing: 'quadOut' })
+                .to(0.22, { scale: Vec3.ZERO }, { easing: 'quadIn' })
+                .call(() => node.destroy())
+                .start();
+        });
+    }
+
     private handleDailyCheckIn(): void {
         const save = StorageManager.load();
         const today = this.getLocalDateKey();
@@ -711,6 +835,7 @@ export class GameManager extends Component {
         save.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, save.coins + reward.coins);
         save.diamonds = Math.min(GAME_CONFIG.ECONOMY.DIAMOND_CAP, save.diamonds + reward.diamonds);
         StorageManager.save(save);
+        void CloudSaveManager.uploadSave();
 
         const rewardText = reward.diamonds > 0 ? `${reward.diamonds} 钻石` : `${reward.coins} 金币`;
         this.showInfoPanel('签到成功', `第 ${dayIndex + 1} 天签到奖励：${rewardText}`);

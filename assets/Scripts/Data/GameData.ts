@@ -36,6 +36,15 @@ export interface PlayerSaveData {
         consecutiveDays: number;
         checkInHistory: boolean[];
     };
+    social: {
+        loginCode: string;
+        lastLoginTime: number;
+        lastLoginError: string;
+        cloudSyncedAt: number;
+        lastShareDate: string;
+        dailyShareCount: number;
+        totalShares: number;
+    };
     flags: {
         hasShownAgeTip: boolean;
     };
@@ -66,6 +75,15 @@ export function createDefaultSaveData(): PlayerSaveData {
             lastCheckInDate: '',
             consecutiveDays: 0,
             checkInHistory: [false, false, false, false, false, false, false],
+        },
+        social: {
+            loginCode: '',
+            lastLoginTime: 0,
+            lastLoginError: '',
+            cloudSyncedAt: 0,
+            lastShareDate: '',
+            dailyShareCount: 0,
+            totalShares: 0,
         },
         flags: {
             hasShownAgeTip: false,

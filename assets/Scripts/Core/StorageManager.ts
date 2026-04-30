@@ -56,6 +56,40 @@ export class StorageManager {
         return data;
     }
 
+    static replaceWith(data: PlayerSaveData): void {
+        this.save(this.deepMerge(createDefaultSaveData(), data));
+    }
+
+    static mergeSaveData(local: PlayerSaveData, remote: PlayerSaveData): PlayerSaveData {
+        const merged = this.deepMerge(createDefaultSaveData(), local);
+        const newerBase = remote.lastSaveTime > local.lastSaveTime ? remote : local;
+        const base = this.deepMerge(merged, newerBase);
+
+        base.currentLevel = Math.max(local.currentLevel, remote.currentLevel);
+        base.coins = Math.max(local.coins, remote.coins);
+        base.diamonds = Math.max(local.diamonds, remote.diamonds);
+        base.completedLevels = Array.from(new Set([...local.completedLevels, ...remote.completedLevels])).sort((a, b) => a - b);
+        base.levelStars = { ...local.levelStars };
+        Object.keys(remote.levelStars).forEach((key) => {
+            const levelId = Number(key);
+            base.levelStars[levelId] = Math.max(base.levelStars[levelId] ?? 0, remote.levelStars[levelId] ?? 0);
+        });
+        base.statistics.totalLevelsCompleted = Math.max(local.statistics.totalLevelsCompleted, remote.statistics.totalLevelsCompleted, base.completedLevels.length);
+        base.social.cloudSyncedAt = Date.now();
+        return base;
+    }
+
+    static addCoins(amount: number): PlayerSaveData {
+        const data = this.load();
+        data.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, data.coins + amount);
+        this.save(data);
+        return data;
+    }
+
+    static getTotalStars(data = this.load()): number {
+        return Object.keys(data.levelStars).reduce((sum, key) => sum + (data.levelStars[Number(key)] ?? 0), 0);
+    }
+
     static getDebugSummary(): string {
         const data = this.load();
         const threeStars = Object.keys(data.levelStars).filter((key) => data.levelStars[Number(key)] >= 3).length;
@@ -68,6 +102,8 @@ export class StorageManager {
             `钻石: ${data.diamonds}`,
             `连续签到: ${data.dailyCheckIn.consecutiveDays}天`,
             `上次签到: ${data.dailyCheckIn.lastCheckInDate || '无'}`,
+            `总分享: ${data.social.totalShares}`,
+            `云同步: ${data.social.cloudSyncedAt ? new Date(data.social.cloudSyncedAt).toLocaleString() : '未同步'}`,
         ].join('\n');
     }
 

@@ -5,7 +5,7 @@
 
 export const GAME_CONFIG = {
     /** 游戏版本号 */
-    VERSION: '0.2.0',
+    VERSION: '0.3.0',
 
     /** 关卡相关 */
     LEVEL: {
