@@ -2,6 +2,7 @@ import {
     _decorator,
     Color,
     Component,
+    EventTouch,
     Graphics,
     Label,
     Node,
@@ -29,7 +30,9 @@ export class GameManager extends Component {
     private selectedBottle = -1;
     private isAnimating = false;
     private canvasSize = { width: 720, height: 1280 };
-    private totalLevelCount = 0;
+    private maxBundledLevelId = 150;
+    private lastTapIndex = -1;
+    private lastTapTime = 0;
 
     private background: Node | null = null;
     private viewRoot: Node | null = null;
@@ -38,7 +41,9 @@ export class GameManager extends Component {
     private stepLabel: Label | null = null;
     private levelLabel: Label | null = null;
     private coinLabel: Label | null = null;
+    private statusLabel: Label | null = null;
     private bottles: Bottle[] = [];
+    private previousStateBeforeSettings = GameState.MAIN_MENU;
 
     onLoad(): void {
         GameManager.instance = this;
@@ -52,6 +57,12 @@ export class GameManager extends Component {
 
     start(): void {
         this.showMainMenu();
+        const save = StorageManager.load();
+        if (!save.flags.hasShownAgeTip) {
+            save.flags.hasShownAgeTip = true;
+            StorageManager.save(save);
+            this.showAgeTipPanel();
+        }
     }
 
     private buildBaseLayers(): void {
@@ -83,16 +94,21 @@ export class GameManager extends Component {
             const save = StorageManager.load();
             this.startLevel(save.currentLevel);
         });
-        this.createButton(this.viewRoot, '选择关卡', new Vec3(0, 56, 0), 240, 68, '#45B7D1', () => this.showLevelSelect());
-        this.createButton(this.viewRoot, '分享求助', new Vec3(0, -44, 0), 240, 68, '#96CEB4', () => {
-            WXAPI.showToast('微信环境中可分享', 'none');
+        this.createButton(this.viewRoot, '选择关卡', new Vec3(0, 56, 0), 240, 68, '#45B7D1', () => {
+            void this.showLevelSelect();
         });
+        this.createQuickMenuButton('签到', new Vec3(-210, -72, 0), () => this.handleDailyCheckIn());
+        this.createQuickMenuButton('排行', new Vec3(-70, -72, 0), () => this.showInfoPanel('排行榜', '好友排行榜将在微信开放数据域接入后启用。'));
+        this.createQuickMenuButton('设置', new Vec3(70, -72, 0), () => this.showSettingsPanel(GameState.MAIN_MENU));
+        this.createQuickMenuButton('商店', new Vec3(210, -72, 0), () => this.showInfoPanel('主题商店', '主题商店将在美术资源接入后开放。'));
+        this.createButton(this.viewRoot, '每日挑战', new Vec3(-130, -210, 0), 200, 58, '#FFFFFF', () => this.showInfoPanel('每日挑战', '每日挑战将在后续版本开放，所有玩家挑战同一关。'));
+        this.createButton(this.viewRoot, '成就', new Vec3(130, -210, 0), 200, 58, '#FFFFFF', () => this.showInfoPanel('成就', this.getAchievementSummary()));
 
-        this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -188, 0), new Color(64, 82, 90));
-        this.createLabel(this.viewRoot, 'v1.0 核心玩法版', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
+        this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -300, 0), new Color(64, 82, 90));
+        this.createLabel(this.viewRoot, 'v0.2 单局体验版', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
     }
 
-    private showLevelSelect(): void {
+    private async showLevelSelect(): Promise<void> {
         this.state = GameState.LEVEL_SELECT;
         this.clearView();
         this.drawBackground('#E8F6F3');
@@ -102,15 +118,20 @@ export class GameManager extends Component {
             return;
         }
 
+        this.createLabel(this.viewRoot, '读取关卡...', 30, Vec3.ZERO, new Color(83, 103, 112));
+        try {
+            this.maxBundledLevelId = await this.levelManager.getMaxBundledLevelId();
+        } catch (error) {
+            console.warn('[GameManager] getMaxBundledLevelId failed, use fallback count.', error);
+        }
+
+        this.clearView();
+        this.drawBackground('#E8F6F3');
         this.createButton(this.viewRoot, '<', new Vec3(-300, 520, 0), 72, 58, '#4ECDC4', () => this.showMainMenu());
         this.createLabel(this.viewRoot, '选择关卡', 42, new Vec3(0, 520, 0), new Color(45, 52, 54));
 
         const save = StorageManager.load();
-        // 总关卡数从已加载的章节数据中获取，若未加载则使用默认值150
-        const totalLevels = this.levelManager.currentChapter
-            ? this.getTotalLevelCount()
-            : 150;
-        const maxLevel = Math.min(totalLevels, Math.max(25, save.currentLevel + 8));
+        const maxLevel = Math.min(this.maxBundledLevelId, Math.max(25, save.currentLevel + 8));
         const columns = 5;
         const startX = -260;
         const startY = 390;
@@ -134,24 +155,6 @@ export class GameManager extends Component {
                 unlocked ? new Color(45, 52, 54) : new Color(120, 132, 140),
             );
         }
-    }
-
-    private getTotalLevelCount(): number {
-        if (this.totalLevelCount > 0) {
-            return this.totalLevelCount;
-        }
-        // 从已加载的关卡数据中统计
-        const chapterIds = [1, 2, 3, 4];
-        let count = 0;
-        for (const chapterId of chapterIds) {
-            const asset = this.levelManager['chapterCache']?.get?.(chapterId);
-            if (asset) {
-                count += asset.levels?.length ?? 0;
-            }
-        }
-        // 若未缓存则使用默认值
-        this.totalLevelCount = count > 0 ? count : 150;
-        return this.totalLevelCount;
     }
 
     private async startLevel(levelId: number): Promise<void> {
@@ -201,14 +204,18 @@ export class GameManager extends Component {
 
         this.drawBackground(chapter.theme.backgroundColor);
 
-        this.createButton(this.viewRoot, '<', new Vec3(-310, 540, 0), 64, 54, '#FFFFFF', () => this.showLevelSelect());
+        this.createButton(this.viewRoot, '<', new Vec3(-310, 540, 0), 64, 54, '#FFFFFF', () => {
+            void this.showLevelSelect();
+        });
+        this.createButton(this.viewRoot, '暂停', new Vec3(306, 540, 0), 96, 54, '#FFFFFF', () => this.showPausePanel());
         this.levelLabel = this.createLabel(this.viewRoot, '', 34, new Vec3(0, 545, 0), new Color(45, 52, 54));
-        this.coinLabel = this.createLabel(this.viewRoot, '', 24, new Vec3(250, 545, 0), new Color(64, 82, 90));
+        this.coinLabel = this.createLabel(this.viewRoot, '', 24, new Vec3(205, 545, 0), new Color(64, 82, 90));
 
         this.stepLabel = this.createLabel(this.viewRoot, '', 28, new Vec3(0, 475, 0), new Color(64, 82, 90));
         this.createButton(this.viewRoot, '撤销', new Vec3(-190, 410, 0), 128, 56, '#FFFFFF', () => this.undo());
         this.createButton(this.viewRoot, '提示', new Vec3(0, 410, 0), 128, 56, '#FFFFFF', () => this.showHint());
         this.createButton(this.viewRoot, '重置', new Vec3(190, 410, 0), 128, 56, '#FFFFFF', () => this.resetLevel());
+        this.statusLabel = this.createLabel(this.viewRoot, '点击瓶子开始倒水，双击可自动寻找目标', 22, new Vec3(0, 348, 0), new Color(83, 103, 112), 620);
 
         this.bottleLayer = this.createLayer('BottleLayer', this.viewRoot);
 
@@ -283,11 +290,23 @@ export class GameManager extends Component {
         }
 
         const state = this.levelManager.currentState[index];
+        const now = Date.now();
+        const isDoubleTap = this.lastTapIndex === index && now - this.lastTapTime <= GAME_CONFIG.INPUT.DOUBLE_CLICK_INTERVAL;
+        this.lastTapIndex = index;
+        this.lastTapTime = now;
+
+        if (isDoubleTap && state.length > 0) {
+            await this.autoPour(index);
+            return;
+        }
+
         if (this.selectedBottle < 0) {
             if (state.length === 0) {
+                this.showStatus('空瓶不能作为源瓶，可以作为目标瓶。');
                 return;
             }
             this.selectBottle(index);
+            this.showStatus(`已选择第 ${index + 1} 个瓶子`);
             return;
         }
 
@@ -298,19 +317,38 @@ export class GameManager extends Component {
 
         if (!this.levelManager.canPour(this.selectedBottle, index)) {
             this.bottles[index]?.playShake();
+            this.showStatus('这个目标暂时不能倒入。');
             WXAPI.vibrateShort();
             return;
         }
 
-        const fromIndex = this.selectedBottle;
-        const action = this.levelManager.pour(fromIndex, index);
+        await this.performPour(this.selectedBottle, index);
+    }
+
+    private async autoPour(fromIndex: number): Promise<void> {
+        const targets = this.levelManager.getValidTargets(fromIndex);
+        if (targets.length === 0) {
+            this.bottles[fromIndex]?.playShake();
+            this.showStatus('这个瓶子暂时没有可倒目标。');
+            return;
+        }
+
+        const target = targets.length === 1
+            ? targets[0]
+            : targets.find((index) => this.levelManager.currentState[index].length > 0) ?? targets[0];
+        this.selectBottle(fromIndex);
+        await this.performPour(fromIndex, target);
+    }
+
+    private async performPour(fromIndex: number, toIndex: number): Promise<void> {
+        const action = this.levelManager.pour(fromIndex, toIndex);
         if (!action) {
             return;
         }
 
         this.isAnimating = true;
         const fromPos = this.bottles[fromIndex].node.position.clone();
-        const toPos = this.bottles[index].node.position.clone();
+        const toPos = this.bottles[toIndex].node.position.clone();
         const chapter = this.levelManager.currentChapter;
         if (!chapter) {
             this.isAnimating = false;
@@ -324,6 +362,7 @@ export class GameManager extends Component {
         }
         await PourController.playFlow(this.bottleLayer, new Vec3(fromPos.x, fromPos.y + 120, 0), new Vec3(toPos.x, toPos.y + 120, 0), palette[action.colorId - 1], action.count);
         this.isAnimating = false;
+        this.showStatus(`倒入 ${action.count} 格液体`);
         this.refreshGameplay();
 
         if (this.levelManager.checkWin()) {
@@ -347,10 +386,12 @@ export class GameManager extends Component {
         }
         const action = this.levelManager.undo();
         if (!action) {
+            this.showStatus('没有可撤销的步骤');
             WXAPI.showToast('没有可撤销的步骤', 'none');
             return;
         }
         this.selectBottle(-1);
+        this.showStatus('已撤销上一步');
         this.refreshGameplay();
     }
 
@@ -360,11 +401,13 @@ export class GameManager extends Component {
         }
         const hint = this.levelManager.getHint();
         if (!hint) {
+            this.showStatus('暂时没有提示');
             WXAPI.showToast('暂时没有提示', 'none');
             return;
         }
         this.selectBottle(hint[0]);
         this.bottles[hint[1]]?.playShake();
+        this.showStatus(`建议从第 ${hint[0] + 1} 个瓶子倒到第 ${hint[1] + 1} 个瓶子`);
     }
 
     private resetLevel(): void {
@@ -373,6 +416,7 @@ export class GameManager extends Component {
         }
         this.selectBottle(-1);
         this.levelManager.reset();
+        this.showStatus('本关已重置');
         this.refreshGameplay();
     }
 
@@ -390,22 +434,303 @@ export class GameManager extends Component {
 
         const result = StorageManager.completeLevel(level.levelId, this.levelManager.steps, level.minSteps);
 
-        const popup = this.createPanel(this.popupLayer, new Vec3(0, 0, 0), 520, 560, '#FFFFFF');
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 85, true);
+        const popup = this.createPanel(this.popupLayer, new Vec3(0, 0, 0), 520, 600, '#FFFFFF', 24, 255, true);
         popup.setScale(new Vec3(0.75, 0.75, 1));
-        this.createLabel(popup, '通关成功', 46, new Vec3(0, 190, 0), new Color(45, 52, 54));
-        this.createLabel(popup, '★'.repeat(result.stars), 52, new Vec3(0, 115, 0), new Color(255, 193, 7));
-        this.createLabel(popup, `步数 ${this.levelManager.steps} / 最优 ${level.minSteps}`, 28, new Vec3(0, 42, 0), new Color(83, 103, 112));
-        this.createLabel(popup, `获得金币 +${result.coins}`, 30, new Vec3(0, -28, 0), new Color(235, 154, 35));
-        this.createButton(popup, '下一关', new Vec3(0, -125, 0), 220, 66, '#4ECDC4', () => {
+        this.createLabel(popup, '通关成功', 46, new Vec3(0, 210, 0), new Color(45, 52, 54));
+        this.createLabel(popup, '★'.repeat(result.stars), 52, new Vec3(0, 136, 0), new Color(255, 193, 7));
+        this.createLabel(popup, `步数 ${this.levelManager.steps} / 最优 ${level.minSteps}`, 28, new Vec3(0, 66, 0), new Color(83, 103, 112));
+        this.createLabel(popup, `获得金币 +${result.coins}`, 30, new Vec3(0, -4, 0), new Color(235, 154, 35));
+        const rewardNotice = this.createLabel(popup, '', 18, new Vec3(0, -58, 0), new Color(120, 132, 140), 420);
+        this.createButton(popup, '双倍奖励', new Vec3(-125, -112, 0), 210, 66, '#FFEAA7', () => {
+            rewardNotice.string = '激励视频广告将在微信构建接入后启用。';
+        });
+        this.createButton(popup, '下一关', new Vec3(125, -112, 0), 210, 66, '#4ECDC4', () => {
             this.popupLayer?.removeAllChildren();
             this.startLevel(level.levelId + 1);
         });
-        this.createButton(popup, '选关', new Vec3(0, -210, 0), 180, 58, '#EAF4F4', () => {
+        this.createButton(popup, '返回选关', new Vec3(0, -210, 0), 220, 58, '#EAF4F4', () => {
             this.popupLayer?.removeAllChildren();
-            this.showLevelSelect();
+            void this.showLevelSelect();
         }, new Color(45, 52, 54));
 
         tween(popup).to(0.22, { scale: Vec3.ONE }).start();
+    }
+
+    private showPausePanel(): void {
+        if ((this.state !== GameState.PLAYING && this.state !== GameState.PAUSED && this.state !== GameState.SETTINGS) || !this.popupLayer) {
+            return;
+        }
+
+        this.state = GameState.PAUSED;
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 115)
+            .on(Node.EventType.TOUCH_END, () => this.resumeGame());
+
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 480, 560, '#FFFFFF', 24, 255, true);
+        panel.setScale(new Vec3(0.78, 0.78, 1));
+        this.createLabel(panel, '游戏暂停', 46, new Vec3(0, 205, 0), new Color(45, 52, 54));
+        this.createButton(panel, '继续游戏', new Vec3(0, 112, 0), 320, 72, '#4ECDC4', () => this.resumeGame());
+        this.createButton(panel, '重新开始', new Vec3(0, 18, 0), 320, 72, '#E8F6F3', () => {
+            this.popupLayer?.removeAllChildren();
+            this.state = GameState.PLAYING;
+            this.resetLevel();
+        });
+        this.createButton(panel, '返回主菜单', new Vec3(0, -76, 0), 320, 72, '#E8F6F3', () => this.showReturnMainConfirm());
+        this.createButton(panel, '设置', new Vec3(0, -178, 0), 160, 64, '#FFFFFF', () => this.showSettingsPanel(GameState.PAUSED), new Color(45, 52, 54));
+
+        tween(panel).to(0.24, { scale: Vec3.ONE }).start();
+    }
+
+    private resumeGame(): void {
+        if (this.state !== GameState.PAUSED) {
+            return;
+        }
+        this.popupLayer?.removeAllChildren();
+        this.state = GameState.PLAYING;
+        this.showStatus('继续游戏');
+    }
+
+    private showReturnMainConfirm(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 125, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 420, 260, '#FFFFFF', 24, 255, true);
+        this.createLabel(panel, '确定要返回主菜单吗？', 30, new Vec3(0, 70, 0), new Color(45, 52, 54));
+        this.createLabel(panel, '当前关卡进度不会保存。', 22, new Vec3(0, 18, 0), new Color(83, 103, 112));
+        this.createButton(panel, '取消', new Vec3(-92, -72, 0), 150, 58, '#E8F6F3', () => this.showPausePanel());
+        this.createButton(panel, '确定', new Vec3(92, -72, 0), 150, 58, '#4ECDC4', () => this.showMainMenu());
+    }
+
+    private showSettingsPanel(previousState: GameState): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        this.previousStateBeforeSettings = previousState;
+        this.state = GameState.SETTINGS;
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, previousState === GameState.PAUSED ? 115 : 70, true);
+
+        const save = StorageManager.load();
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 520, 640, '#FFFFFF', 24, 255, true);
+        panel.setScale(new Vec3(0.82, 0.82, 1));
+        this.createLabel(panel, '设置', 46, new Vec3(0, 254, 0), new Color(45, 52, 54));
+        this.createButton(panel, '×', new Vec3(210, 254, 0), 58, 52, '#E8F6F3', () => this.closeSettingsPanel());
+
+        this.createToggleRow(panel, '音乐', new Vec3(0, 165, 0), save.settings.musicEnabled, (enabled) => {
+            save.settings.musicEnabled = enabled;
+            StorageManager.save(save);
+        });
+        this.createToggleRow(panel, '音效', new Vec3(0, 82, 0), save.settings.soundEnabled, (enabled) => {
+            save.settings.soundEnabled = enabled;
+            StorageManager.save(save);
+        });
+        this.createToggleRow(panel, '震动', new Vec3(0, -1, 0), save.settings.vibrationEnabled, (enabled) => {
+            save.settings.vibrationEnabled = enabled;
+            StorageManager.save(save);
+        });
+
+        this.createPanel(panel, new Vec3(0, -62, 0), 440, 2, '#E8F6F3', 1);
+        this.createButton(panel, '适龄提示 (12+)', new Vec3(0, -122, 0), 400, 58, '#F8F9FA', () => this.showAgeTipPanel());
+        this.createButton(panel, '隐私协议', new Vec3(0, -192, 0), 400, 58, '#F8F9FA', () => this.showInfoPanel('隐私协议', '隐私协议将在微信小游戏发布前接入正式页面。'));
+        this.createButton(panel, '去广告特权 ¥6.00', new Vec3(0, -262, 0), 400, 58, '#FFEAA7', () => this.showInfoPanel('去广告特权', '内购将在微信支付接入后开放。'));
+        this.createButton(panel, 'GM', new Vec3(-198, -306, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
+        this.createLabel(panel, `版本 ${GAME_CONFIG.VERSION}`, 20, new Vec3(32, -306, 0), new Color(178, 190, 195), 260);
+
+        tween(panel).to(0.24, { scale: Vec3.ONE }).start();
+    }
+
+    private closeSettingsPanel(): void {
+        if (this.previousStateBeforeSettings === GameState.PAUSED) {
+            this.showPausePanel();
+            return;
+        }
+
+        this.popupLayer?.removeAllChildren();
+        this.state = this.previousStateBeforeSettings;
+    }
+
+    private showAgeTipPanel(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        const restoreSettings = this.state === GameState.SETTINGS;
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 105, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 480, '#FFFFFF', 24, 255, true);
+        this.createLabel(panel, '适龄提示', 42, new Vec3(0, 160, 0), new Color(45, 52, 54));
+        this.createLabel(panel, '《倒水大师》适用于 12 周岁及以上用户。游戏为轻度益智解谜内容，不含真实支付引导内容；请合理安排游戏时间。', 24, new Vec3(0, 40, 0), new Color(83, 103, 112), 455);
+        this.createButton(panel, '我知道了', new Vec3(0, -150, 0), 220, 64, '#4ECDC4', () => {
+            this.popupLayer?.removeAllChildren();
+            if (restoreSettings) {
+                this.showSettingsPanel(this.previousStateBeforeSettings);
+            }
+        });
+    }
+
+    private showInfoPanel(title: string, message: string): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        const stateBeforeInfo = this.state;
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 88, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 500, 340, '#FFFFFF', 24, 255, true);
+        panel.setScale(new Vec3(0.85, 0.85, 1));
+        this.createLabel(panel, title, 38, new Vec3(0, 104, 0), new Color(45, 52, 54));
+        this.createLabel(panel, message, 24, new Vec3(0, 16, 0), new Color(83, 103, 112), 410);
+        this.createButton(panel, '知道了', new Vec3(0, -104, 0), 190, 58, '#4ECDC4', () => {
+            this.popupLayer?.removeAllChildren();
+            if (stateBeforeInfo === GameState.SETTINGS) {
+                this.showSettingsPanel(this.previousStateBeforeSettings);
+            } else {
+                this.state = stateBeforeInfo;
+            }
+        });
+        tween(panel).to(0.2, { scale: Vec3.ONE }).start();
+    }
+
+    private showGmPanel(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        this.state = GameState.SETTINGS;
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 100, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 600, '#FFFFFF', 24, 255, true);
+        panel.setScale(new Vec3(0.86, 0.86, 1));
+        this.createLabel(panel, 'GM 工具', 42, new Vec3(0, 238, 0), new Color(45, 52, 54));
+        const summaryBox = this.createPanel(panel, new Vec3(0, 72, 0), 470, 260, '#F8F9FA', 18, 255, true);
+        this.createMultilineLabel(summaryBox, StorageManager.getDebugSummary(), 24, Vec3.ZERO, new Color(83, 103, 112), 420, 220);
+        this.createButton(panel, '重置存档', new Vec3(0, -128, 0), 260, 64, '#FF7675', () => this.showResetSaveConfirm());
+        this.createButton(panel, '返回设置', new Vec3(0, -218, 0), 220, 58, '#E8F6F3', () => this.showSettingsPanel(this.previousStateBeforeSettings));
+        tween(panel).to(0.2, { scale: Vec3.ONE }).start();
+    }
+
+    private showResetSaveConfirm(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 125, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 500, 300, '#FFFFFF', 24, 255, true);
+        this.createLabel(panel, '确认重置存档？', 34, new Vec3(0, 82, 0), new Color(45, 52, 54));
+        this.createLabel(panel, '这会把关卡进度、金币、钻石、签到和设置恢复到初始状态。', 22, new Vec3(0, 18, 0), new Color(120, 70, 70), 410);
+        this.createButton(panel, '取消', new Vec3(-105, -86, 0), 160, 58, '#E8F6F3', () => this.showGmPanel());
+        this.createButton(panel, '确认重置', new Vec3(105, -86, 0), 180, 58, '#FF7675', () => this.resetSaveAndReturn());
+    }
+
+    private resetSaveAndReturn(): void {
+        StorageManager.resetToDefault();
+        this.popupLayer?.removeAllChildren();
+        this.showMainMenu();
+        this.showInfoPanel('存档已重置', '测试存档已恢复到初始状态。再次开始游戏会从第1关进入。');
+    }
+
+    private createToggleRow(parent: Node, labelText: string, position: Vec3, initialValue: boolean, onChange: (enabled: boolean) => void): void {
+        this.createLabel(parent, labelText, 30, new Vec3(position.x - 150, position.y, 0), new Color(45, 52, 54), 150);
+        let enabled = initialValue;
+        const switchNode = this.createToggleButton(
+            parent,
+            new Vec3(position.x + 155, position.y, 0),
+            enabled,
+            () => {
+                enabled = !enabled;
+                onChange(enabled);
+                updateVisual(enabled);
+            },
+        );
+        switchNode.name = `Toggle_${labelText}`;
+
+        const label = switchNode.getChildByName('Label')?.getComponent(Label) ?? null;
+        const graphics = switchNode.getComponent(Graphics);
+        const updateVisual = (value: boolean): void => {
+            if (graphics) {
+                graphics.clear();
+                graphics.fillColor = colorFromHex(value ? '#4ECDC4' : '#DFE6E9');
+                graphics.roundRect(-48, -26, 96, 52, 18);
+                graphics.fill();
+            }
+            if (label) {
+                label.string = value ? '开' : '关';
+                label.color = value ? Color.WHITE : new Color(83, 103, 112);
+            }
+            tween(switchNode)
+                .to(0.05, { scale: new Vec3(0.94, 0.94, 1) })
+                .to(0.08, { scale: Vec3.ONE })
+                .start();
+        };
+    }
+
+    private createToggleButton(parent: Node, position: Vec3, enabled: boolean, onClick: () => void): Node {
+        const node = this.createPanel(parent, position, 96, 52, enabled ? '#4ECDC4' : '#DFE6E9', 18);
+        node.on(Node.EventType.TOUCH_END, onClick);
+        this.createLabel(node, enabled ? '开' : '关', 26, Vec3.ZERO, enabled ? Color.WHITE : new Color(83, 103, 112), 84);
+        return node;
+    }
+
+    private createQuickMenuButton(text: string, position: Vec3, onClick: () => void): void {
+        if (!this.viewRoot) {
+            return;
+        }
+
+        this.createButton(this.viewRoot, text, position, 104, 74, '#FFFFFF', onClick, new Color(45, 52, 54));
+    }
+
+    private handleDailyCheckIn(): void {
+        const save = StorageManager.load();
+        const today = this.getLocalDateKey();
+        if (save.dailyCheckIn.lastCheckInDate === today) {
+            this.showInfoPanel('每日签到', '今日已经签到过了，明天再来领取奖励吧。');
+            return;
+        }
+
+        const rewards = [
+            { coins: 50, diamonds: 0 },
+            { coins: 100, diamonds: 0 },
+            { coins: 0, diamonds: 10 },
+            { coins: 200, diamonds: 0 },
+            { coins: 50, diamonds: 0 },
+            { coins: 0, diamonds: 20 },
+            { coins: 500, diamonds: 0 },
+        ];
+        const dayIndex = save.dailyCheckIn.consecutiveDays % rewards.length;
+        const reward = rewards[dayIndex];
+
+        save.dailyCheckIn.lastCheckInDate = today;
+        save.dailyCheckIn.consecutiveDays += 1;
+        save.dailyCheckIn.checkInHistory[dayIndex] = true;
+        save.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, save.coins + reward.coins);
+        save.diamonds = Math.min(GAME_CONFIG.ECONOMY.DIAMOND_CAP, save.diamonds + reward.diamonds);
+        StorageManager.save(save);
+
+        const rewardText = reward.diamonds > 0 ? `${reward.diamonds} 钻石` : `${reward.coins} 金币`;
+        this.showInfoPanel('签到成功', `第 ${dayIndex + 1} 天签到奖励：${rewardText}`);
+    }
+
+    private getAchievementSummary(): string {
+        const save = StorageManager.load();
+        const completed = save.statistics.totalLevelsCompleted;
+        const threeStars = Object.keys(save.levelStars).filter((key) => save.levelStars[Number(key)] >= 3).length;
+        return `当前已通关 ${completed} 关，三星 ${threeStars} 个。成就奖励将在后续版本开放领取。`;
+    }
+
+    private getLocalDateKey(): string {
+        const date = new Date();
+        const year = date.getFullYear();
+        const rawMonth = `${date.getMonth() + 1}`;
+        const rawDay = `${date.getDate()}`;
+        const month = rawMonth.length === 1 ? `0${rawMonth}` : rawMonth;
+        const day = rawDay.length === 1 ? `0${rawDay}` : rawDay;
+        return `${year}-${month}-${day}`;
     }
 
     private clearView(): void {
@@ -413,6 +738,21 @@ export class GameManager extends Component {
         this.popupLayer?.removeAllChildren();
         this.bottleLayer = null;
         this.bottles = [];
+        this.statusLabel = null;
+        this.lastTapIndex = -1;
+        this.lastTapTime = 0;
+    }
+
+    private showStatus(message: string): void {
+        if (!this.statusLabel) {
+            return;
+        }
+        this.statusLabel.string = message;
+        const node = this.statusLabel.node;
+        tween(node)
+            .to(0.08, { scale: new Vec3(1.04, 1.04, 1) })
+            .to(0.12, { scale: Vec3.ONE })
+            .start();
     }
 
     private drawBackground(hex: string): void {
@@ -443,7 +783,7 @@ export class GameManager extends Component {
         return layer;
     }
 
-    private createPanel(parent: Node, position: Vec3, width: number, height: number, hex: string, radius = 24): Node {
+    private createPanel(parent: Node, position: Vec3, width: number, height: number, hex: string, radius = 24, alpha = 255, swallow = false): Node {
         const node = new Node('Panel');
         parent.addChild(node);
         node.setPosition(position);
@@ -451,10 +791,23 @@ export class GameManager extends Component {
         transform.setContentSize(width, height);
 
         const graphics = node.addComponent(Graphics);
-        graphics.fillColor = colorFromHex(hex);
+        graphics.fillColor = colorFromHex(hex, alpha);
         graphics.roundRect(-width / 2, -height / 2, width, height, radius);
         graphics.fill();
+        if (swallow) {
+            this.swallowTouches(node);
+        }
         return node;
+    }
+
+    private swallowTouches(node: Node): void {
+        const stop = (event: EventTouch): void => {
+            event.propagationStopped = true;
+        };
+        node.on(Node.EventType.TOUCH_START, stop);
+        node.on(Node.EventType.TOUCH_MOVE, stop);
+        node.on(Node.EventType.TOUCH_END, stop);
+        node.on(Node.EventType.TOUCH_CANCEL, stop);
     }
 
     private createButton(
@@ -501,6 +854,24 @@ export class GameManager extends Component {
         label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER;
         label.overflow = Label.Overflow.SHRINK;
+        return label;
+    }
+
+    private createMultilineLabel(parent: Node, text: string, fontSize: number, position: Vec3, color: Color, width: number, height: number): Label {
+        const node = new Node('Label');
+        parent.addChild(node);
+        node.setPosition(position);
+        const transform = node.addComponent(UITransform);
+        transform.setContentSize(width, height);
+
+        const label = node.addComponent(Label);
+        label.string = text;
+        label.fontSize = fontSize;
+        label.lineHeight = Math.floor(fontSize * 1.35);
+        label.color = color;
+        label.horizontalAlign = Label.HorizontalAlign.LEFT;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.overflow = Label.Overflow.CLAMP;
         return label;
     }
 }

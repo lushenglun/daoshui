@@ -90,6 +90,39 @@ export class LevelManager {
         return findHint(this.currentState, this.currentLevel.bottleCapacity);
     }
 
+    getValidTargets(fromIndex: number): number[] {
+        if (!this.currentLevel) {
+            return [];
+        }
+
+        const targets: number[] = [];
+        for (let toIndex = 0; toIndex < this.currentState.length; toIndex += 1) {
+            if (this.canPour(fromIndex, toIndex)) {
+                targets.push(toIndex);
+            }
+        }
+        return targets;
+    }
+
+    async getMaxBundledLevelId(): Promise<number> {
+        let maxLevelId = 0;
+        for (const chapterId of this.chapterIds) {
+            const chapter = await this.loadChapter(chapterId);
+            for (const level of chapter.levels) {
+                maxLevelId = Math.max(maxLevelId, level.levelId);
+            }
+        }
+        return maxLevelId;
+    }
+
+    getLoadedLevelCount(): number {
+        let count = 0;
+        this.chapterCache.forEach((chapter) => {
+            count += chapter.levels.length;
+        });
+        return count;
+    }
+
     private async findLevel(levelId: number): Promise<{ chapter: ChapterConfig; level: LevelConfig } | null> {
         for (const chapterId of this.chapterIds) {
             const chapter = await this.loadChapter(chapterId);

@@ -50,6 +50,27 @@ export class StorageManager {
         sys.localStorage.setItem(GAME_CONFIG.SAVE.SAVE_KEY, JSON.stringify(data));
     }
 
+    static resetToDefault(): PlayerSaveData {
+        const data = createDefaultSaveData();
+        this.save(data);
+        return data;
+    }
+
+    static getDebugSummary(): string {
+        const data = this.load();
+        const threeStars = Object.keys(data.levelStars).filter((key) => data.levelStars[Number(key)] >= 3).length;
+        return [
+            `存档键: ${GAME_CONFIG.SAVE.SAVE_KEY}`,
+            `当前解锁关卡: ${data.currentLevel}`,
+            `已通关: ${data.completedLevels.length}`,
+            `三星: ${threeStars}`,
+            `金币: ${data.coins}`,
+            `钻石: ${data.diamonds}`,
+            `连续签到: ${data.dailyCheckIn.consecutiveDays}天`,
+            `上次签到: ${data.dailyCheckIn.lastCheckInDate || '无'}`,
+        ].join('\n');
+    }
+
     static completeLevel(levelId: number, steps: number, minSteps: number): { stars: number; coins: number } {
         const data = this.load();
         const stars = steps <= minSteps + GAME_CONFIG.LEVEL.THREE_STAR_MARGIN

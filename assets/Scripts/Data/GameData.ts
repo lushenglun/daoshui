@@ -4,6 +4,7 @@ export enum GameState {
     LEVEL_SELECT = 'LEVEL_SELECT',
     PLAYING = 'PLAYING',
     PAUSED = 'PAUSED',
+    SETTINGS = 'SETTINGS',
     LEVEL_COMPLETE = 'LEVEL_COMPLETE',
 }
 
@@ -35,6 +36,9 @@ export interface PlayerSaveData {
         consecutiveDays: number;
         checkInHistory: boolean[];
     };
+    flags: {
+        hasShownAgeTip: boolean;
+    };
     statistics: {
         totalPlayTime: number;
         totalLevelsCompleted: number;
@@ -63,6 +67,9 @@ export function createDefaultSaveData(): PlayerSaveData {
             consecutiveDays: 0,
             checkInHistory: [false, false, false, false, false, false, false],
         },
+        flags: {
+            hasShownAgeTip: false,
+        },
         statistics: {
             totalPlayTime: 0,
             totalLevelsCompleted: 0,
@@ -71,4 +78,3 @@ export function createDefaultSaveData(): PlayerSaveData {
         },
     };
 }
-
