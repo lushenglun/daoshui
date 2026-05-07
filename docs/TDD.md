@@ -698,7 +698,7 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - [x] **v0.2** 主菜单扩展：签到/排行/设置/商店/每日挑战/成就入口
 - [x] **v0.2** 每日签到基础版：7日循环奖励、本地存档
 - [x] **v0.2** GM 工具：查看存档摘要、二次确认重置存档
-- [ ] **v0.2** AudioManager 基础实现：BGM/SFX 播放、音量控制
+- [x] **v0.2/V0.5** AudioManager 基础实现：BGM/SFX 播放、音量控制（已接入 `Audio_Spec.md` 全量交付资源）
 - [x] v0.3 微信登录与存档云同步（接口封装 + 编辑器降级 + 云函数预留）
 - [x] v0.3 分享功能：文案库、分享触发、每日首次奖励发放
 - [x] v0.3 好友排行榜：主域面板 + 开放数据域消息 + 编辑器预览数据
@@ -711,6 +711,7 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - [x] **v0.5** 主题商店：7主题卡片预览（迷你瓶子绘制）、金币/钻石解锁、即时切换
 - [x] **v0.5** 每日挑战：日期种子选关、无限重试、个人最佳记录、倒计时
 - [x] **v0.5** 存档扩展：achievements / dailyChallenge / unlockedThemes / currentTheme / currentThemeId
+- [x] **v0.5.1** 审核准备：BUILD 配置化、发布版隐藏 GM、审核期隐藏广告入口
 
 ### v0.5 留存运营系统实现记录（2026-05-07）
 
@@ -720,6 +721,18 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - 激励广告 Mock 模式默认开启，补签场景使用 `check_in_makeup`，观看次数仍累计到 `ad_watcher_50` 与 VIP 主题进度。
 - 每日挑战采用日期种子固定关卡，记录当天个人最佳步数，首次完成发放 100 金币，可无限重试。
 - 通关、撤销、提示、分享、广告、每日挑战完成已接入成就进度检测；成就达成会播放顶部横幅，并可在成就面板领取奖励。
+- 验证：`node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\node_modules\typescript\lib\tsc.js" --noEmit --skipLibCheck` 通过。
+
+### 音频资源接入记录（2026-05-07）
+
+- 已按 `docs/Audio_Spec.md` 接入 31 个音频资源：3 首 BGM、28 个 SFX（星星音效为 3 个变调版本）；2026-05-07 已替换为 Mastering 输出版本。为兼顾包体与兼容性，当前 `bgm_main_menu` / `bgm_gameplay` 使用 OGG，`bgm_level_complete` 与全部 SFX 使用 MP3。
+- 资源路径：
+  - `assets/resources/Audio/BGM/`
+  - `assets/resources/Audio/SFX/`
+- `AudioManager` 已从 stub 改为资源驱动实现，支持 `resources.load` 动态加载、BGM 循环播放、SFX `playOneShot` 多实例播放、音乐/音效开关实时调音量。
+- 2026-05-07 针对短音效偶发不出声做稳定性处理：启动时预加载全部 28 个 SFX，并使用 6 个 `AudioSource` 轮换播放，降低首次加载延迟与高频音效互相吞音的概率。
+- 已接入触发点：主菜单/游玩/结算 BGM，按钮点击、倒水、错误/抖动、瓶子选中/取消、撤销、重置、提示、通关胜利、星星亮起、金币/钻石获得、签到/补签、成就解锁/领取、主题解锁/切换、每日挑战完成。
+- 音频资源总量约 0.85MB，其中 BGM 约 0.55MB、SFX 约 0.30MB；需在微信小游戏真机构建后确认主菜单/游玩 BGM 的 OGG 兼容与短音效 MP3 播放稳定性。
 - 验证：`node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\node_modules\typescript\lib\tsc.js" --noEmit --skipLibCheck` 通过。
 - [ ] 长期：将运行时 UI 拆分为 Prefab（可选优化）
 - [ ] 长期：接入美术资源替换纯代码绘制（可选优化）

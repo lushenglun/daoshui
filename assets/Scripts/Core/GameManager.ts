@@ -17,6 +17,7 @@ import { colorFromHex } from '../Utils/ColorUtils';
 import { Bottle } from '../Gameplay/Bottle';
 import { LevelManager } from '../Gameplay/LevelManager';
 import { PourController } from '../Gameplay/PourController';
+import { AudioManager } from './AudioManager';
 import { StorageManager } from './StorageManager';
 import { SDKManager } from './SDKManager';
 import { CloudSaveManager } from '../WeChat/CloudSaveManager';
@@ -69,9 +70,10 @@ export class GameManager extends Component {
     }
 
     start(): void {
+        const save = StorageManager.load();
+        AudioManager.initialize(save.settings.musicEnabled, save.settings.soundEnabled);
         this.showMainMenu();
         SDKManager.initialize();
-        const save = StorageManager.load();
         if (!save.flags.hasShownAgeTip) {
             save.flags.hasShownAgeTip = true;
             StorageManager.save(save);
@@ -99,6 +101,7 @@ export class GameManager extends Component {
         this.clearView();
         this.drawBackground(this.getCurrentThemeBackground('#E8F6F3'));
         AdManager.showBanner();
+        void AudioManager.playBgm('bgm_main_menu');
 
         if (!this.viewRoot) {
             console.error('[GameManager] viewRoot is null in showMainMenu');
@@ -124,9 +127,11 @@ export class GameManager extends Component {
         this.createButton(this.viewRoot, '分享求助', new Vec3(0, -292, 0), 220, 58, '#FFEAA7', () => {
             void this.handleMainShare();
         });
-        this.createButton(this.viewRoot, '看视频领金币', new Vec3(0, -430, 0), 240, 58, '#FFEAA7', () => {
-            void this.handleFreeCoinsAd();
-        });
+        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            this.createButton(this.viewRoot, '看视频领金币', new Vec3(0, -430, 0), 240, 58, '#FFEAA7', () => {
+                void this.handleFreeCoinsAd();
+            });
+        }
 
         this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -374, 0), new Color(64, 82, 90));
         this.createLabel(this.viewRoot, 'v0.5 留存运营版', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
@@ -207,6 +212,7 @@ export class GameManager extends Component {
         try {
             await this.levelManager.loadLevel(levelId);
             this.state = GameState.PLAYING;
+            void AudioManager.playBgm('bgm_gameplay');
             this.buildGameplayView();
             this.refreshGameplay();
         } catch (error) {
@@ -344,27 +350,32 @@ export class GameManager extends Component {
 
         if (this.selectedBottle < 0) {
             if (state.length === 0) {
-                this.showStatus('空瓶不能作为源瓶，可以作为目标瓶。');
-                return;
-            }
-            this.selectBottle(index);
-            this.showStatus(`已选择第 ${index + 1} 个瓶子`);
+            this.showStatus('空瓶不能作为源瓶，可以作为目标瓶。');
+            void AudioManager.playSfx('sfx_locked');
             return;
         }
+        this.selectBottle(index);
+        void AudioManager.playSfx('sfx_bottle_select');
+        this.showStatus(`已选择第 ${index + 1} 个瓶子`);
+        return;
+    }
 
-        if (this.selectedBottle === index) {
-            this.selectBottle(-1);
-            return;
+    if (this.selectedBottle === index) {
+        this.selectBottle(-1);
+        void AudioManager.playSfx('sfx_bottle_deselect');
+        return;
+    }
+
+    if (!this.levelManager.canPour(this.selectedBottle, index)) {
+        this.bottles[index]?.playShake();
+        this.showStatus('这个目标暂时不能倒入。');
+        void AudioManager.playSfx('sfx_pour_error');
+        void AudioManager.playSfx('sfx_bottle_shake', 0.8);
+        WXAPI.vibrateShort();
+        return;
         }
 
-        if (!this.levelManager.canPour(this.selectedBottle, index)) {
-            this.bottles[index]?.playShake();
-            this.showStatus('这个目标暂时不能倒入。');
-            WXAPI.vibrateShort();
-            return;
-        }
-
-        await this.performPour(this.selectedBottle, index);
+        await this.performPour(this.selectedBottle, index, false);
     }
 
     private async autoPour(fromIndex: number): Promise<void> {
@@ -372,6 +383,7 @@ export class GameManager extends Component {
         if (targets.length === 0) {
             this.bottles[fromIndex]?.playShake();
             this.showStatus('这个瓶子暂时没有可倒目标。');
+            void AudioManager.playSfx('sfx_locked');
             return;
         }
 
@@ -379,10 +391,10 @@ export class GameManager extends Component {
             ? targets[0]
             : targets.find((index) => this.levelManager.currentState[index].length > 0) ?? targets[0];
         this.selectBottle(fromIndex);
-        await this.performPour(fromIndex, target);
+        await this.performPour(fromIndex, target, true);
     }
 
-    private async performPour(fromIndex: number, toIndex: number): Promise<void> {
+    private async performPour(fromIndex: number, toIndex: number, isAutoPour = false): Promise<void> {
         const action = this.levelManager.pour(fromIndex, toIndex);
         if (!action) {
             return;
@@ -403,6 +415,7 @@ export class GameManager extends Component {
             return;
         }
         await PourController.playFlow(this.bottleLayer, new Vec3(fromPos.x, fromPos.y + 120, 0), new Vec3(toPos.x, toPos.y + 120, 0), palette[action.colorId - 1], action.count);
+        void AudioManager.playSfx(isAutoPour ? 'sfx_auto_pour' : 'sfx_pour_success');
         this.isAnimating = false;
         this.showStatus(`倒入 ${action.count} 格液体`);
         this.refreshGameplay();
@@ -428,6 +441,7 @@ export class GameManager extends Component {
         }
         if (!this.levelManager.canUndo()) {
             this.showStatus('没有可撤销的步骤');
+            void AudioManager.playSfx('sfx_locked');
             WXAPI.showToast('没有可撤销的步骤', 'none');
             return;
         }
@@ -468,6 +482,7 @@ export class GameManager extends Component {
         }
         this.selectBottle(-1);
         this.showStatus('已撤销上一步');
+        void AudioManager.playSfx('sfx_undo');
         this.updateAchievementProgress('undo_master', 1, 'add');
         this.refreshGameplay();
     }
@@ -479,6 +494,7 @@ export class GameManager extends Component {
         const hint = this.levelManager.getHint();
         if (!hint) {
             this.showStatus('暂时没有提示');
+            void AudioManager.playSfx('sfx_locked');
             WXAPI.showToast('暂时没有提示', 'none');
             return;
         }
@@ -500,6 +516,7 @@ export class GameManager extends Component {
 
     private applyHint(hint: [number, number]): void {
         this.hintUsedThisLevel = true;
+        void AudioManager.playSfx('sfx_hint');
         this.selectBottle(hint[0]);
         this.bottles[hint[1]]?.playShake();
         this.showStatus(`建议从第 ${hint[0] + 1} 个瓶子倒到第 ${hint[1] + 1} 个瓶子`);
@@ -521,9 +538,11 @@ export class GameManager extends Component {
             this.popupLayer?.removeAllChildren();
             this.state = GameState.PLAYING;
         });
-        this.createButton(panel, '看视频', new Vec3(105, -84, 0), 160, 58, '#4ECDC4', () => {
-            void this.handleRewardedChoice(scene, onReward);
-        });
+        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            this.createButton(panel, '看视频', new Vec3(105, -84, 0), 160, 58, '#4ECDC4', () => {
+                void this.handleRewardedChoice(scene, onReward);
+            });
+        }
     }
 
     private async handleRewardedChoice(scene: RewardedScene, onReward: () => void): Promise<void> {
@@ -549,12 +568,15 @@ export class GameManager extends Component {
         this.selectBottle(-1);
         this.levelManager.reset();
         this.showStatus('本关已重置');
+        void AudioManager.playSfx('sfx_reset');
         this.refreshGameplay();
     }
 
     private completeLevel(): void {
         this.state = GameState.LEVEL_COMPLETE;
         AdManager.showBanner();
+        void AudioManager.playBgm('bgm_level_complete', true, false);
+        AudioManager.playWin();
         const level = this.levelManager.currentLevel;
         if (!level) {
             console.error('[GameManager] level is null in completeLevel');
@@ -675,16 +697,19 @@ export class GameManager extends Component {
 
         this.createToggleRow(panel, '音乐', new Vec3(0, 165, 0), save.settings.musicEnabled, (enabled) => {
             save.settings.musicEnabled = enabled;
+            AudioManager.setMusicEnabled(enabled);
             StorageManager.save(save);
             void CloudSaveManager.uploadSave();
         });
         this.createToggleRow(panel, '音效', new Vec3(0, 82, 0), save.settings.soundEnabled, (enabled) => {
             save.settings.soundEnabled = enabled;
+            AudioManager.setSoundEnabled(enabled);
             StorageManager.save(save);
             void CloudSaveManager.uploadSave();
         });
         this.createToggleRow(panel, '震动', new Vec3(0, -1, 0), save.settings.vibrationEnabled, (enabled) => {
             save.settings.vibrationEnabled = enabled;
+            AudioManager.playToggle();
             StorageManager.save(save);
             void CloudSaveManager.uploadSave();
         });
@@ -692,7 +717,9 @@ export class GameManager extends Component {
         this.createPanel(panel, new Vec3(0, -62, 0), 440, 2, '#E8F6F3', 1);
         this.createButton(panel, '适龄提示 (12+)', new Vec3(0, -122, 0), 400, 58, '#F8F9FA', () => this.showAgeTipPanel());
         this.createButton(panel, '隐私协议', new Vec3(0, -192, 0), 400, 58, '#F8F9FA', () => this.showInfoPanel('隐私协议', '隐私协议将在微信小游戏发布前接入正式页面。'));
-        this.createButton(panel, 'GM', new Vec3(-198, -270, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
+        if (!GAME_CONFIG.BUILD.IS_RELEASE) {
+            this.createButton(panel, 'GM', new Vec3(-198, -270, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
+        }
         this.createButton(panel, '同步', new Vec3(-106, -270, 0), 74, 42, '#E8F6F3', () => {
             void this.handleManualSync();
         });
@@ -903,6 +930,7 @@ export class GameManager extends Component {
             enabled,
             () => {
                 enabled = !enabled;
+                AudioManager.playToggle();
                 onChange(enabled);
                 updateVisual(enabled);
             },
@@ -965,7 +993,10 @@ export class GameManager extends Component {
                 .delay(delay)
                 .to(0.25, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'backOut' })
                 .to(0.15, { scale: Vec3.ONE }, { easing: 'quadOut' })
-                .call(() => this.playStarSparkles(starNode))
+                .call(() => {
+                    AudioManager.playStar(i);
+                    this.playStarSparkles(starNode);
+                })
                 .start();
         }
     }
@@ -1043,9 +1074,11 @@ export class GameManager extends Component {
                 this.claimDailyCheckIn();
             }
         });
-        this.createButton(panel, '看视频补签昨天', new Vec3(0, -254, 0), 320, 58, '#FFEAA7', () => {
-            void this.makeupYesterdayCheckIn();
-        }, new Color(45, 52, 54));
+        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            this.createButton(panel, '看视频补签昨天', new Vec3(0, -254, 0), 320, 58, '#FFEAA7', () => {
+                void this.makeupYesterdayCheckIn();
+            }, new Color(45, 52, 54));
+        }
         this.createButton(panel, '关闭', new Vec3(0, -316, 0), 180, 48, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
 
         tween(panel).to(0.22, { scale: Vec3.ONE }).start();
@@ -1075,6 +1108,10 @@ export class GameManager extends Component {
         void CloudSaveManager.uploadSave();
 
         const rewardText = diamonds > 0 ? `${diamonds}钻石` : `${coins}金币`;
+        void AudioManager.playSfx(diamonds > 0 ? 'sfx_diamonds_get' : 'sfx_checkin_success');
+        if (save.dailyCheckIn.consecutiveDays === 7 || save.dailyCheckIn.consecutiveDays === 14) {
+            void AudioManager.playSfx('sfx_streak_bonus');
+        }
         WXAPI.showToast(`签到成功：${rewardText}`, 'success');
         this.showDailyCheckInPanel();
     }
@@ -1104,6 +1141,7 @@ export class GameManager extends Component {
         StorageManager.save(save);
         this.syncAdAchievementProgress();
         void CloudSaveManager.uploadSave();
+        void AudioManager.playSfx('sfx_checkin_success');
         WXAPI.showToast('补签成功，连续签到已延续', 'success');
         this.showDailyCheckInPanel();
     }
@@ -1153,6 +1191,7 @@ export class GameManager extends Component {
         }
         StorageManager.save(save);
         void CloudSaveManager.uploadSave();
+        void AudioManager.playSfx(config.rewards.diamonds ? 'sfx_diamonds_get' : 'sfx_achievement_claim');
         WXAPI.showToast('成就奖励已领取', 'success');
         this.showAchievementPanel();
     }
@@ -1321,6 +1360,7 @@ export class GameManager extends Component {
             return;
         }
         const banner = this.createPanel(this.popupLayer, new Vec3(0, 640, 0), 560, 72, '#FFEAA7', 18, 245, true);
+        void AudioManager.playSfx('sfx_achievement_unlock');
         this.createLabel(banner, `成就解锁：${config.name}`, 26, Vec3.ZERO, new Color(45, 52, 54), 500);
         tween(banner)
             .to(0.25, { position: new Vec3(0, 522, 0) }, { easing: 'backOut' })
@@ -1376,12 +1416,14 @@ export class GameManager extends Component {
             return;
         }
         StorageManager.unlockTheme(theme.id);
+        void AudioManager.playSfx('sfx_theme_unlock');
         this.applyTheme(theme);
     }
 
     private applyTheme(theme: ThemeConfig): void {
         StorageManager.setCurrentTheme(theme.id);
         void CloudSaveManager.uploadSave();
+        void AudioManager.playSfx('sfx_theme_switch');
         WXAPI.showToast(`主题已切换为：${theme.name}`, 'success');
         this.drawBackground(theme.backgroundColor);
         this.showThemeShopPanel();
@@ -1434,6 +1476,7 @@ export class GameManager extends Component {
         StorageManager.save(save);
         this.updateAchievementProgress('daily_challenge_7', save.dailyChallenge.consecutiveDays, 'max');
         void CloudSaveManager.uploadSave();
+        void AudioManager.playSfx('sfx_daily_challenge_complete');
         this.showDailyChallengeCompletePopup(levelId, steps, firstCompleteToday, save.dailyChallenge.bestStepsByDate[today]);
     }
 
@@ -1602,6 +1645,8 @@ export class GameManager extends Component {
         const node = this.createPanel(parent, position, width, height, hex, 18);
         node.name = `Button_${text}`;
         node.on(Node.EventType.TOUCH_END, () => {
+            AudioManager.resumeCurrentBgm();
+            AudioManager.playButton();
             tween(node)
                 .to(0.05, { scale: new Vec3(0.94, 0.94, 1) })
                 .to(0.08, { scale: Vec3.ONE })

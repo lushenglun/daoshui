@@ -5,7 +5,15 @@
 
 export const GAME_CONFIG = {
     /** 游戏版本号 */
-    VERSION: '0.5.0',
+    VERSION: '0.5.1',
+
+    /** 构建与发布配置 */
+    BUILD: {
+        /** 是否为发布版本（true = 隐藏 GM 工具等开发功能） */
+        IS_RELEASE: true,
+        /** 审核期间是否隐藏所有广告入口（流量主未开通前建议开启） */
+        HIDE_AD_ENTRIES_IN_REVIEW: true,
+    },
 
     /** 关卡相关 */
     LEVEL: {
