@@ -5,12 +5,24 @@ import { WXAPI } from '../WeChat/WXAPI';
 
 export class SDKManager {
     private static loginStarted = false;
+    private static initialized = false;
 
     static initialize(): void {
-        AdManager.preloadAds();
-        WXAPI.initCloud();
+        if (this.initialized) {
+            return;
+        }
+        this.initialized = true;
         WXAPI.showShareMenu();
-        void this.loginAndSync();
+
+        // Keep first screen light: cloud login/sync and ad preloading can wait until
+        // after the game is visible and interactive.
+        setTimeout(() => {
+            WXAPI.initCloud();
+            void this.loginAndSync();
+        }, 1500);
+        setTimeout(() => {
+            AdManager.preloadAds();
+        }, 2500);
     }
 
     static async loginAndSync(): Promise<boolean> {

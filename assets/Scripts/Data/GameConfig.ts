@@ -1,11 +1,11 @@
 /**
- * 《倒水大师》全局游戏配置常量
+ * 《倒水乐乐乐》全局游戏配置常量
  * 所有数值型配置集中管理，便于策划调优
  */
 
 export const GAME_CONFIG = {
     /** 游戏版本号 */
-    VERSION: '0.3.0',
+    VERSION: '0.5.0',
 
     /** 关卡相关 */
     LEVEL: {
@@ -53,6 +53,12 @@ export const GAME_CONFIG = {
 
     /** 广告配置 */
     AD: {
+        /** 是否启用 Mock 模式（流量主未开通时使用） */
+        MOCK_ENABLED: true,
+        /** Mock 模式激励视频模拟时长（毫秒） */
+        MOCK_REWARDED_DELAY: 1500,
+        /** Mock 模式插屏模拟时长（毫秒） */
+        MOCK_INTERSTITIAL_DELAY: 500,
         /** 激励视频冷却时间（秒） */
         REWARDED_COOLDOWN: 30,
         /** 激励视频每日上限 */
@@ -123,6 +129,8 @@ export const COLOR_PALETTES: Record<string, string[]> = {
     ocean: ['#00CED1', '#20B2AA', '#008B8B', '#5F9EA0', '#4682B4', '#1E90FF', '#00BFFF', '#87CEFA'],
     autumn: ['#D2691E', '#CD853F', '#DEB887', '#F4A460', '#BC8F8F', '#F5DEB3', '#FFE4B5', '#FFDEAD'],
     neon: ['#FF00FF', '#00FFFF', '#FFFF00', '#FF0080', '#80FF00', '#0080FF', '#FF8000', '#8000FF'],
+    sakura: ['#FFB7C5', '#FF8FAB', '#FADADD', '#E75480', '#FFFFFF', '#C8E7E2', '#F7CAC9', '#FFDDE2'],
+    vip: ['#1F2933', '#111827', '#D4AF37', '#F7E7A1', '#6B7280', '#FFFFFF', '#B8860B', '#2D3436'],
 };
 
 /** 微信广告位ID配置（需要替换为真实ID） */

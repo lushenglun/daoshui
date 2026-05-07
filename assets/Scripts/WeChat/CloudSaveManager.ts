@@ -124,6 +124,8 @@ export class CloudSaveManager {
     }
 
     private static mergeSaveData(local: PlayerSaveData, remote: PlayerSaveData): PlayerSaveData {
+        local = StorageManager.normalizeSaveData(local);
+        remote = StorageManager.normalizeSaveData(remote);
         const useRemote = remote.lastSaveTime > local.lastSaveTime;
         const base: PlayerSaveData = useRemote
             ? JSON.parse(JSON.stringify(remote))
@@ -153,6 +155,28 @@ export class CloudSaveManager {
             bestUndoStreak: Math.max(local.statistics.bestUndoStreak, remote.statistics.bestUndoStreak),
         };
 
+        base.unlockedThemes = Array.from(new Set([...(local.unlockedThemes ?? []), ...(remote.unlockedThemes ?? [])]));
+        Object.keys(remote.achievements ?? {}).forEach((id) => {
+            const localProgress = local.achievements[id];
+            const remoteProgress = remote.achievements[id];
+            if (!localProgress || !remoteProgress) {
+                return;
+            }
+            base.achievements[id] = remoteProgress.current > localProgress.current ? { ...remoteProgress } : { ...localProgress };
+            base.achievements[id].completed = localProgress.completed || remoteProgress.completed;
+            base.achievements[id].claimed = localProgress.claimed || remoteProgress.claimed;
+            base.achievements[id].completedAt = Math.max(localProgress.completedAt, remoteProgress.completedAt);
+        });
+        base.dailyChallenge.bestStepsByDate = { ...local.dailyChallenge.bestStepsByDate };
+        Object.keys(remote.dailyChallenge.bestStepsByDate ?? {}).forEach((date) => {
+            const localSteps = base.dailyChallenge.bestStepsByDate[date] ?? 0;
+            const remoteSteps = remote.dailyChallenge.bestStepsByDate[date] ?? 0;
+            base.dailyChallenge.bestStepsByDate[date] = localSteps > 0 && remoteSteps > 0 ? Math.min(localSteps, remoteSteps) : Math.max(localSteps, remoteSteps);
+        });
+        base.dailyChallenge.completedDates = Array.from(new Set([...(local.dailyChallenge.completedDates ?? []), ...(remote.dailyChallenge.completedDates ?? [])]));
+        base.dailyChallenge.totalCompletions = Math.max(local.dailyChallenge.totalCompletions, remote.dailyChallenge.totalCompletions);
+        base.dailyChallenge.consecutiveDays = Math.max(local.dailyChallenge.consecutiveDays, remote.dailyChallenge.consecutiveDays);
+
         // 若远程较新，覆盖设置/签到/社交/标记
         if (useRemote) {
             base.settings = { ...remote.settings };
@@ -162,6 +186,6 @@ export class CloudSaveManager {
         }
 
         base.lastSaveTime = Date.now();
-        return base;
+        return StorageManager.normalizeSaveData(base);
     }
 }

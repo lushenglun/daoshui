@@ -19,9 +19,9 @@ export interface ShareResult {
 
 const SHARE_TEMPLATES: Record<ShareScene, string[]> = {
     main_help: [
-        '我在倒水大师第{level}关卡住了，求助大神！',
-        '这杯水怎么倒才对？来倒水大师帮我看看第{level}关！',
-        '倒水大师有点上头，第{level}关等你来挑战。',
+        '我在倒水乐乐乐第{level}关卡住了，求助大神！',
+        '这杯水怎么倒才对？来倒水乐乐乐帮我看看第{level}关！',
+        '倒水乐乐乐有点上头，第{level}关等你来挑战。',
     ],
     level_help: [
         '这关太难了，求好友指点迷津！',
@@ -29,9 +29,9 @@ const SHARE_TEMPLATES: Record<ShareScene, string[]> = {
         '颜色都混在一起了，第{level}关谁能解？',
     ],
     result_showoff: [
-        '我用{steps}步通关倒水大师第{level}关，拿到{stars}星！',
+        '我用{steps}步通关倒水乐乐乐第{level}关，拿到{stars}星！',
         '第{level}关已通关，{stars}星到手，来比一比？',
-        '倒水大师第{level}关完成，只用了{steps}步。',
+        '倒水乐乐乐第{level}关完成，只用了{steps}步。',
     ],
 };
 

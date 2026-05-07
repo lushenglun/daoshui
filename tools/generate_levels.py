@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-《倒水大师》关卡自动生成与可解性验证工具
+《倒水乐乐乐》关卡自动生成与可解性验证工具
 核心算法：逆向工程 + BFS验证
 用法: python generate_levels.py --chapter 3 --levels 25 --output chapter3.json
 """

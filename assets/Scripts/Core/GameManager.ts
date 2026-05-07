@@ -10,8 +10,9 @@ import {
     UITransform,
     Vec3,
 } from 'cc';
-import { GAME_CONFIG } from '../Data/GameConfig';
-import { GameState } from '../Data/GameData';
+import { COLOR_PALETTES, GAME_CONFIG } from '../Data/GameConfig';
+import { GameState, PlayerSaveData } from '../Data/GameData';
+import { ACHIEVEMENT_CONFIGS, AchievementConfig, DAILY_CHECKIN_REWARDS, THEME_CONFIGS, ThemeConfig } from '../Data/V05Config';
 import { colorFromHex } from '../Utils/ColorUtils';
 import { Bottle } from '../Gameplay/Bottle';
 import { LevelManager } from '../Gameplay/LevelManager';
@@ -19,6 +20,7 @@ import { PourController } from '../Gameplay/PourController';
 import { StorageManager } from './StorageManager';
 import { SDKManager } from './SDKManager';
 import { CloudSaveManager } from '../WeChat/CloudSaveManager';
+import { AdManager, RewardedScene } from '../WeChat/AdManager';
 import { RankEntry, RankManager } from '../WeChat/RankManager';
 import { ShareManager } from '../WeChat/ShareManager';
 import { WXAPI } from '../WeChat/WXAPI';
@@ -37,6 +39,13 @@ export class GameManager extends Component {
     private maxBundledLevelId = 150;
     private lastTapIndex = -1;
     private lastTapTime = 0;
+    private freeUndoUsed = 0;
+    private videoUndoCredits = 0;
+    private levelStartTime = 0;
+    private hintUsedThisLevel = false;
+    private dailyChallengeMode = false;
+    private achievementBannerQueue: AchievementConfig[] = [];
+    private isAchievementBannerPlaying = false;
 
     private background: Node | null = null;
     private viewRoot: Node | null = null;
@@ -68,6 +77,7 @@ export class GameManager extends Component {
             StorageManager.save(save);
             this.showAgeTipPanel();
         }
+        this.scheduleOnce(() => this.tryShowDailyCheckInOnLaunch(), 0.5);
     }
 
     private buildBaseLayers(): void {
@@ -85,41 +95,49 @@ export class GameManager extends Component {
 
     private showMainMenu(): void {
         this.state = GameState.MAIN_MENU;
+        this.dailyChallengeMode = false;
         this.clearView();
-        this.drawBackground('#E8F6F3');
+        this.drawBackground(this.getCurrentThemeBackground('#E8F6F3'));
+        AdManager.showBanner();
 
         if (!this.viewRoot) {
             console.error('[GameManager] viewRoot is null in showMainMenu');
             return;
         }
 
-        this.createLabel(this.viewRoot, '倒水大师', 62, new Vec3(0, 360, 0), new Color(45, 52, 54));
+        this.createLabel(this.viewRoot, '倒水乐乐乐', 62, new Vec3(0, 360, 0), new Color(45, 52, 54));
         this.createLabel(this.viewRoot, '把同色液体倒在一起', 26, new Vec3(0, 300, 0), new Color(83, 103, 112));
         this.createButton(this.viewRoot, '开始游戏', new Vec3(0, 165, 0), 280, 86, '#4ECDC4', () => {
             const save = StorageManager.load();
+            this.dailyChallengeMode = false;
             this.startLevel(save.currentLevel);
         });
         this.createButton(this.viewRoot, '选择关卡', new Vec3(0, 56, 0), 240, 68, '#45B7D1', () => {
             void this.showLevelSelect();
         });
-        this.createQuickMenuButton('签到', new Vec3(-210, -72, 0), () => this.handleDailyCheckIn());
+        this.createQuickMenuButton('签到', new Vec3(-210, -72, 0), () => this.showDailyCheckInPanel());
         this.createQuickMenuButton('排行', new Vec3(-70, -72, 0), () => this.showRankPanel());
         this.createQuickMenuButton('设置', new Vec3(70, -72, 0), () => this.showSettingsPanel(GameState.MAIN_MENU));
-        this.createQuickMenuButton('商店', new Vec3(210, -72, 0), () => this.showInfoPanel('主题商店', '主题商店将在美术资源接入后开放。'));
-        this.createButton(this.viewRoot, '每日挑战', new Vec3(-130, -210, 0), 200, 58, '#FFFFFF', () => this.showInfoPanel('每日挑战', '每日挑战将在后续版本开放，所有玩家挑战同一关。'));
-        this.createButton(this.viewRoot, '成就', new Vec3(130, -210, 0), 200, 58, '#FFFFFF', () => this.showInfoPanel('成就', this.getAchievementSummary()));
+        this.createQuickMenuButton('商店', new Vec3(210, -72, 0), () => this.showThemeShopPanel());
+        this.createButton(this.viewRoot, '每日挑战', new Vec3(-130, -210, 0), 200, 58, '#FFFFFF', () => this.showDailyChallengePanel());
+        this.createButton(this.viewRoot, '成就', new Vec3(130, -210, 0), 200, 58, '#FFFFFF', () => this.showAchievementPanel());
         this.createButton(this.viewRoot, '分享求助', new Vec3(0, -292, 0), 220, 58, '#FFEAA7', () => {
             void this.handleMainShare();
         });
+        this.createButton(this.viewRoot, '看视频领金币', new Vec3(0, -430, 0), 240, 58, '#FFEAA7', () => {
+            void this.handleFreeCoinsAd();
+        });
 
         this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -374, 0), new Color(64, 82, 90));
-        this.createLabel(this.viewRoot, 'v0.3 微信测试版 (cloudlog)', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
+        this.createLabel(this.viewRoot, 'v0.5 留存运营版', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
     }
 
     private async showLevelSelect(): Promise<void> {
         this.state = GameState.LEVEL_SELECT;
+        this.dailyChallengeMode = false;
         this.clearView();
-        this.drawBackground('#E8F6F3');
+        this.drawBackground(this.getCurrentThemeBackground('#E8F6F3'));
+        AdManager.showBanner();
 
         if (!this.viewRoot) {
             console.error('[GameManager] viewRoot is null in showLevelSelect');
@@ -134,7 +152,7 @@ export class GameManager extends Component {
         }
 
         this.clearView();
-        this.drawBackground('#E8F6F3');
+        this.drawBackground(this.getCurrentThemeBackground('#E8F6F3'));
         this.createButton(this.viewRoot, '<', new Vec3(-300, 520, 0), 72, 58, '#4ECDC4', () => this.showMainMenu());
         this.createLabel(this.viewRoot, '选择关卡', 42, new Vec3(0, 520, 0), new Color(45, 52, 54));
 
@@ -159,7 +177,10 @@ export class GameManager extends Component {
                 94,
                 82,
                 unlocked ? '#FFFFFF' : '#D7DEE2',
-                () => unlocked ? this.startLevel(levelId) : WXAPI.showToast('先通关前一关', 'none'),
+                () => {
+                    this.dailyChallengeMode = false;
+                    return unlocked ? this.startLevel(levelId) : WXAPI.showToast('先通关前一关', 'none');
+                },
                 unlocked ? new Color(45, 52, 54) : new Color(120, 132, 140),
             );
         }
@@ -169,12 +190,18 @@ export class GameManager extends Component {
         this.state = GameState.LOADING;
         this.selectedBottle = -1;
         this.isAnimating = false;
+        this.freeUndoUsed = 0;
+        this.videoUndoCredits = 0;
+        this.hintUsedThisLevel = false;
+        this.levelStartTime = Date.now();
+        AdManager.hideBanner();
+        AdManager.preloadRewardedVideo();
         this.clearView();
         if (!this.viewRoot) {
             console.error('[GameManager] viewRoot is null in startLevel');
             return;
         }
-        this.drawBackground('#E8F6F3');
+        this.drawBackground(this.getCurrentThemeBackground('#E8F6F3'));
         this.createLabel(this.viewRoot, '加载中...', 34, Vec3.ZERO, new Color(64, 82, 90));
 
         try {
@@ -210,7 +237,7 @@ export class GameManager extends Component {
             return;
         }
 
-        this.drawBackground(chapter.theme.backgroundColor);
+        this.drawBackground(this.getCurrentThemeBackground(chapter.theme.backgroundColor));
 
         this.createButton(this.viewRoot, '<', new Vec3(-310, 540, 0), 64, 54, '#FFFFFF', () => {
             void this.showLevelSelect();
@@ -241,7 +268,7 @@ export class GameManager extends Component {
         }
         const save = StorageManager.load();
         if (this.levelLabel) {
-            this.levelLabel.string = `关卡 ${level.levelId}`;
+            this.levelLabel.string = this.dailyChallengeMode ? `每日挑战 ${level.levelId}` : `关卡 ${level.levelId}`;
         }
         if (this.stepLabel) {
             this.stepLabel.string = `步数 ${this.levelManager.steps} / 目标 ${level.targetSteps}`;
@@ -263,10 +290,17 @@ export class GameManager extends Component {
             return;
         }
 
+        const count = level.bottleCount;
+        if (this.bottles.length === count && layer.children.length === count) {
+            for (let i = 0; i < count; i += 1) {
+                this.bottles[i]?.setState(this.levelManager.currentState[i]);
+            }
+            return;
+        }
+
         layer.removeAllChildren();
         this.bottles = [];
 
-        const count = level.bottleCount;
         const rows = count <= 4 ? 1 : count <= 8 ? 2 : 3;
         const perRow = Math.ceil(count / rows);
         const gapX = Math.min(150, 620 / Math.max(1, perRow - 1));
@@ -392,6 +426,40 @@ export class GameManager extends Component {
         if (this.state !== GameState.PLAYING || this.isAnimating) {
             return;
         }
+        if (!this.levelManager.canUndo()) {
+            this.showStatus('没有可撤销的步骤');
+            WXAPI.showToast('没有可撤销的步骤', 'none');
+            return;
+        }
+        if (this.freeUndoUsed < GAME_CONFIG.UNDO.FREE_COUNT) {
+            this.applyUndo();
+            this.freeUndoUsed += 1;
+            return;
+        }
+        if (this.videoUndoCredits > 0) {
+            this.applyUndo();
+            this.videoUndoCredits -= 1;
+            return;
+        }
+        if (StorageManager.spendCoins(GAME_CONFIG.UNDO.COST)) {
+            this.applyUndo();
+            void CloudSaveManager.uploadSave();
+            return;
+        }
+        this.showRewardedChoicePanel(
+            '金币不足',
+            `观看视频可获得 ${GAME_CONFIG.UNDO.VIDEO_REWARD_COUNT} 次撤销。`,
+            'undo',
+            () => {
+                this.videoUndoCredits += GAME_CONFIG.UNDO.VIDEO_REWARD_COUNT;
+                this.applyUndo();
+                this.videoUndoCredits -= 1;
+            },
+        );
+        return;
+    }
+
+    private applyUndo(): void {
         const action = this.levelManager.undo();
         if (!action) {
             this.showStatus('没有可撤销的步骤');
@@ -400,6 +468,7 @@ export class GameManager extends Component {
         }
         this.selectBottle(-1);
         this.showStatus('已撤销上一步');
+        this.updateAchievementProgress('undo_master', 1, 'add');
         this.refreshGameplay();
     }
 
@@ -413,9 +482,64 @@ export class GameManager extends Component {
             WXAPI.showToast('暂时没有提示', 'none');
             return;
         }
+        if (StorageManager.spendCoins(GAME_CONFIG.HINT.COST)) {
+            void CloudSaveManager.uploadSave();
+            this.applyHint(hint);
+            this.refreshGameplay();
+            return;
+        }
+
+        this.showRewardedChoicePanel(
+            '金币不足',
+            `观看视频可免费获得 ${GAME_CONFIG.HINT.VIDEO_REWARD_COUNT} 次提示。`,
+            'hint',
+            () => this.applyHint(hint),
+        );
+        return;
+    }
+
+    private applyHint(hint: [number, number]): void {
+        this.hintUsedThisLevel = true;
         this.selectBottle(hint[0]);
         this.bottles[hint[1]]?.playShake();
         this.showStatus(`建议从第 ${hint[0] + 1} 个瓶子倒到第 ${hint[1] + 1} 个瓶子`);
+    }
+
+    private showRewardedChoicePanel(title: string, message: string, scene: RewardedScene, onReward: () => void): void {
+        if (!this.popupLayer) {
+            return;
+        }
+
+        this.state = GameState.PAUSED;
+        AdManager.hideBanner();
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 95, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 480, 300, '#FFFFFF', 24, 255, true);
+        this.createLabel(panel, title, 34, new Vec3(0, 86, 0), new Color(45, 52, 54));
+        this.createLabel(panel, message, 22, new Vec3(0, 26, 0), new Color(83, 103, 112), 400);
+        this.createButton(panel, '取消', new Vec3(-105, -84, 0), 160, 58, '#E8F6F3', () => {
+            this.popupLayer?.removeAllChildren();
+            this.state = GameState.PLAYING;
+        });
+        this.createButton(panel, '看视频', new Vec3(105, -84, 0), 160, 58, '#4ECDC4', () => {
+            void this.handleRewardedChoice(scene, onReward);
+        });
+    }
+
+    private async handleRewardedChoice(scene: RewardedScene, onReward: () => void): Promise<void> {
+        const result = await AdManager.showRewardedVideo(scene);
+        this.popupLayer?.removeAllChildren();
+        this.state = GameState.PLAYING;
+        if (!result.completed) {
+            this.showStatus(result.message);
+            WXAPI.showToast(result.message, 'none');
+            return;
+        }
+
+        this.syncAdAchievementProgress();
+        onReward();
+        void CloudSaveManager.uploadSave();
+        this.refreshGameplay();
     }
 
     private resetLevel(): void {
@@ -430,6 +554,7 @@ export class GameManager extends Component {
 
     private completeLevel(): void {
         this.state = GameState.LEVEL_COMPLETE;
+        AdManager.showBanner();
         const level = this.levelManager.currentLevel;
         if (!level) {
             console.error('[GameManager] level is null in completeLevel');
@@ -440,7 +565,13 @@ export class GameManager extends Component {
             return;
         }
 
+        if (this.dailyChallengeMode) {
+            this.completeDailyChallenge(level.levelId, this.levelManager.steps);
+            return;
+        }
+
         const result = StorageManager.completeLevel(level.levelId, this.levelManager.steps, level.minSteps);
+        this.updateCompletionAchievements(result.stars);
         void CloudSaveManager.uploadSave();
 
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 85, true);
@@ -451,19 +582,26 @@ export class GameManager extends Component {
         this.createLabel(popup, `步数 ${this.levelManager.steps} / 最优 ${level.minSteps}`, 28, new Vec3(0, 66, 0), new Color(83, 103, 112));
         this.createLabel(popup, `获得金币 +${result.coins}`, 30, new Vec3(0, -4, 0), new Color(235, 154, 35));
         const rewardNotice = this.createLabel(popup, '', 18, new Vec3(0, -58, 0), new Color(120, 132, 140), 420);
+        let doubleClaimed = false;
         this.createButton(popup, '双倍奖励', new Vec3(-125, -112, 0), 210, 66, '#FFEAA7', () => {
-            rewardNotice.string = '激励视频广告将在微信构建接入后启用。';
+            if (doubleClaimed) {
+                rewardNotice.string = '双倍奖励已领取。';
+                return;
+            }
+            void this.handleDoubleCoinsAd(result.coins, rewardNotice, () => {
+                doubleClaimed = true;
+            });
         });
         this.createButton(popup, '下一关', new Vec3(125, -112, 0), 210, 66, '#4ECDC4', () => {
             this.popupLayer?.removeAllChildren();
-            this.startLevel(level.levelId + 1);
+            void this.goToNextLevelWithInterstitial(level.levelId);
         });
         this.createButton(popup, '分享炫耀', new Vec3(-125, -210, 0), 210, 58, '#E8F6F3', () => {
             void this.handleResultShare(level.levelId, this.levelManager.steps, result.stars, rewardNotice);
         }, new Color(45, 52, 54));
         this.createButton(popup, '返回选关', new Vec3(125, -210, 0), 210, 58, '#EAF4F4', () => {
             this.popupLayer?.removeAllChildren();
-            void this.showLevelSelect();
+            void this.returnToLevelSelectWithInterstitial(level.levelId);
         }, new Color(45, 52, 54));
 
         tween(popup).to(0.22, { scale: Vec3.ONE }).start();
@@ -500,6 +638,7 @@ export class GameManager extends Component {
         }
         this.popupLayer?.removeAllChildren();
         this.state = GameState.PLAYING;
+        AdManager.hideBanner();
         this.showStatus('继续游戏');
     }
 
@@ -524,6 +663,7 @@ export class GameManager extends Component {
 
         this.previousStateBeforeSettings = previousState;
         this.state = GameState.SETTINGS;
+        AdManager.hideBanner();
         this.popupLayer.removeAllChildren();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, previousState === GameState.PAUSED ? 115 : 70, true);
 
@@ -552,12 +692,11 @@ export class GameManager extends Component {
         this.createPanel(panel, new Vec3(0, -62, 0), 440, 2, '#E8F6F3', 1);
         this.createButton(panel, '适龄提示 (12+)', new Vec3(0, -122, 0), 400, 58, '#F8F9FA', () => this.showAgeTipPanel());
         this.createButton(panel, '隐私协议', new Vec3(0, -192, 0), 400, 58, '#F8F9FA', () => this.showInfoPanel('隐私协议', '隐私协议将在微信小游戏发布前接入正式页面。'));
-        this.createButton(panel, '去广告特权 ¥6.00', new Vec3(0, -262, 0), 400, 58, '#FFEAA7', () => this.showInfoPanel('去广告特权', '内购将在微信支付接入后开放。'));
-        this.createButton(panel, 'GM', new Vec3(-198, -306, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
-        this.createButton(panel, '同步', new Vec3(-106, -306, 0), 74, 42, '#E8F6F3', () => {
+        this.createButton(panel, 'GM', new Vec3(-198, -270, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
+        this.createButton(panel, '同步', new Vec3(-106, -270, 0), 74, 42, '#E8F6F3', () => {
             void this.handleManualSync();
         });
-        this.createLabel(panel, `版本 ${GAME_CONFIG.VERSION}`, 20, new Vec3(32, -306, 0), new Color(178, 190, 195), 260);
+        this.createLabel(panel, `版本 ${GAME_CONFIG.VERSION}`, 20, new Vec3(32, -270, 0), new Color(178, 190, 195), 260);
 
         tween(panel).to(0.24, { scale: Vec3.ONE }).start();
     }
@@ -570,6 +709,9 @@ export class GameManager extends Component {
 
         this.popupLayer?.removeAllChildren();
         this.state = this.previousStateBeforeSettings;
+        if (this.state === GameState.MAIN_MENU || this.state === GameState.LEVEL_SELECT || this.state === GameState.LEVEL_COMPLETE) {
+            AdManager.showBanner();
+        }
     }
 
     private showAgeTipPanel(): void {
@@ -582,7 +724,7 @@ export class GameManager extends Component {
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 105, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 480, '#FFFFFF', 24, 255, true);
         this.createLabel(panel, '适龄提示', 42, new Vec3(0, 160, 0), new Color(45, 52, 54));
-        this.createLabel(panel, '《倒水大师》适用于 12 周岁及以上用户。游戏为轻度益智解谜内容，不含真实支付引导内容；请合理安排游戏时间。', 24, new Vec3(0, 40, 0), new Color(83, 103, 112), 455);
+        this.createLabel(panel, '《倒水乐乐乐》适用于 12 周岁及以上用户。游戏为轻度益智解谜内容，不含真实支付引导内容；请合理安排游戏时间。', 24, new Vec3(0, 40, 0), new Color(83, 103, 112), 455);
         this.createButton(panel, '我知道了', new Vec3(0, -150, 0), 220, 64, '#4ECDC4', () => {
             this.popupLayer?.removeAllChildren();
             if (restoreSettings) {
@@ -652,15 +794,57 @@ export class GameManager extends Component {
         });
     }
 
+    private async handleFreeCoinsAd(): Promise<void> {
+        const result = await AdManager.showRewardedVideo('free_coins');
+        if (!result.completed) {
+            WXAPI.showToast(result.message, 'none');
+            return;
+        }
+
+        StorageManager.addCoins(50);
+        this.syncAdAchievementProgress();
+        void CloudSaveManager.uploadSave();
+        WXAPI.showToast('金币 +50', 'success');
+        this.showMainMenu();
+    }
+
+    private async handleDoubleCoinsAd(coins: number, notice: Label, onClaimed: () => void): Promise<void> {
+        const result = await AdManager.showRewardedVideo('double_coins');
+        if (!result.completed) {
+            notice.string = result.message;
+            return;
+        }
+
+        StorageManager.addCoins(coins);
+        this.syncAdAchievementProgress();
+        void CloudSaveManager.uploadSave();
+        onClaimed();
+        notice.string = `双倍成功，额外获得金币 +${coins}`;
+    }
+
+    private async goToNextLevelWithInterstitial(levelId: number): Promise<void> {
+        this.dailyChallengeMode = false;
+        await AdManager.showInterstitial(levelId);
+        await this.startLevel(levelId + 1);
+    }
+
+    private async returnToLevelSelectWithInterstitial(levelId: number): Promise<void> {
+        this.dailyChallengeMode = false;
+        await AdManager.showInterstitial(levelId);
+        await this.showLevelSelect();
+    }
+
     private async handleMainShare(): Promise<void> {
         const save = StorageManager.load();
         const result = await ShareManager.share('main_help', { levelId: save.currentLevel });
+        this.syncShareAchievementProgress();
         WXAPI.showToast(result.message, result.rewarded ? 'success' : 'none');
         this.showMainMenu();
     }
 
     private async handleResultShare(levelId: number, steps: number, stars: number, notice: Label): Promise<void> {
         const result = await ShareManager.share('result_showoff', { levelId, steps, stars });
+        this.syncShareAchievementProgress();
         notice.string = result.message;
     }
 
@@ -809,43 +993,513 @@ export class GameManager extends Component {
         });
     }
 
-    private handleDailyCheckIn(): void {
+    private tryShowDailyCheckInOnLaunch(): void {
         const save = StorageManager.load();
-        const today = this.getLocalDateKey();
-        if (save.dailyCheckIn.lastCheckInDate === today) {
-            this.showInfoPanel('每日签到', '今日已经签到过了，明天再来领取奖励吧。');
+        if (this.state !== GameState.MAIN_MENU || save.dailyCheckIn.lastCheckInDate === this.getLocalDateKey()) {
+            return;
+        }
+        if (this.popupLayer && this.popupLayer.children.length > 0) {
+            return;
+        }
+        this.showDailyCheckInPanel();
+    }
+
+    private showDailyCheckInPanel(): void {
+        if (!this.popupLayer) {
             return;
         }
 
-        const rewards = [
-            { coins: 50, diamonds: 0 },
-            { coins: 100, diamonds: 0 },
-            { coins: 0, diamonds: 10 },
-            { coins: 200, diamonds: 0 },
-            { coins: 50, diamonds: 0 },
-            { coins: 0, diamonds: 20 },
-            { coins: 500, diamonds: 0 },
-        ];
-        const dayIndex = save.dailyCheckIn.consecutiveDays % rewards.length;
-        const reward = rewards[dayIndex];
+        const save = this.normalizeCheckInBreak(StorageManager.load());
+        const today = this.getLocalDateKey();
+        const signedToday = save.dailyCheckIn.lastCheckInDate === today;
+        const dayIndex = save.dailyCheckIn.consecutiveDays % DAILY_CHECKIN_REWARDS.length;
+        const multiplier = this.getCheckInMultiplier(save.dailyCheckIn.consecutiveDays);
+
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 680, '#FFFFFF', 24, 255, true);
+        panel.setScale(new Vec3(0.82, 0.82, 1));
+        this.createLabel(panel, '每日签到', 42, new Vec3(0, 274, 0), new Color(45, 52, 54));
+        this.createLabel(panel, `连续签到 ${save.dailyCheckIn.consecutiveDays} 天  加成 x${multiplier}`, 24, new Vec3(0, 224, 0), new Color(83, 103, 112), 480);
+
+        DAILY_CHECKIN_REWARDS.forEach((reward, index) => {
+            const col = index % 4;
+            const row = Math.floor(index / 4);
+            const x = -180 + col * 120;
+            const y = 118 - row * 130;
+            const isChecked = save.dailyCheckIn.checkInHistory[index];
+            const isToday = !signedToday && index === dayIndex;
+            const cell = this.createPanel(panel, new Vec3(x, y, 0), 100, 104, isChecked ? '#4ECDC4' : isToday ? '#FFEAA7' : '#F8F9FA', 18, 255, true);
+            this.createLabel(cell, `第${index + 1}天`, 18, new Vec3(0, 24, 0), new Color(45, 52, 54), 86);
+            this.createLabel(cell, isChecked ? '已签' : reward.label, 20, new Vec3(0, -18, 0), isChecked ? Color.WHITE : new Color(83, 103, 112), 90);
+            if (isToday) {
+                tween(cell).repeatForever(tween().to(0.6, { scale: new Vec3(1.06, 1.06, 1) }).to(0.6, { scale: Vec3.ONE })).start();
+            }
+        });
+
+        this.createLabel(panel, signedToday ? '今日已签到，明天再来领取。' : '点击立即签到领取今日奖励。', 22, new Vec3(0, -116, 0), new Color(83, 103, 112), 460);
+        this.createButton(panel, signedToday ? '已签到' : '立即签到', new Vec3(0, -178, 0), 320, 64, signedToday ? '#DFE6E9' : '#4ECDC4', () => {
+            if (!signedToday) {
+                this.claimDailyCheckIn();
+            }
+        });
+        this.createButton(panel, '看视频补签昨天', new Vec3(0, -254, 0), 320, 58, '#FFEAA7', () => {
+            void this.makeupYesterdayCheckIn();
+        }, new Color(45, 52, 54));
+        this.createButton(panel, '关闭', new Vec3(0, -316, 0), 180, 48, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
+
+        tween(panel).to(0.22, { scale: Vec3.ONE }).start();
+    }
+
+    private claimDailyCheckIn(): void {
+        const save = this.normalizeCheckInBreak(StorageManager.load());
+        const today = this.getLocalDateKey();
+        if (save.dailyCheckIn.lastCheckInDate === today) {
+            WXAPI.showToast('今日已经签到', 'none');
+            this.showDailyCheckInPanel();
+            return;
+        }
+
+        const dayIndex = save.dailyCheckIn.consecutiveDays % DAILY_CHECKIN_REWARDS.length;
+        const reward = DAILY_CHECKIN_REWARDS[dayIndex];
+        const multiplier = this.getCheckInMultiplier(save.dailyCheckIn.consecutiveDays);
+        const coins = Math.floor(reward.coins * multiplier);
+        const diamonds = reward.diamonds;
 
         save.dailyCheckIn.lastCheckInDate = today;
         save.dailyCheckIn.consecutiveDays += 1;
         save.dailyCheckIn.checkInHistory[dayIndex] = true;
-        save.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, save.coins + reward.coins);
-        save.diamonds = Math.min(GAME_CONFIG.ECONOMY.DIAMOND_CAP, save.diamonds + reward.diamonds);
+        save.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, save.coins + coins);
+        save.diamonds = Math.min(GAME_CONFIG.ECONOMY.DIAMOND_CAP, save.diamonds + diamonds);
         StorageManager.save(save);
         void CloudSaveManager.uploadSave();
 
-        const rewardText = reward.diamonds > 0 ? `${reward.diamonds} 钻石` : `${reward.coins} 金币`;
-        this.showInfoPanel('签到成功', `第 ${dayIndex + 1} 天签到奖励：${rewardText}`);
+        const rewardText = diamonds > 0 ? `${diamonds}钻石` : `${coins}金币`;
+        WXAPI.showToast(`签到成功：${rewardText}`, 'success');
+        this.showDailyCheckInPanel();
     }
 
-    private getAchievementSummary(): string {
+    private async makeupYesterdayCheckIn(): Promise<void> {
         const save = StorageManager.load();
-        const completed = save.statistics.totalLevelsCompleted;
+        const week = this.getWeekKey();
+        if (save.dailyCheckIn.lastMakeupWeek !== week) {
+            save.dailyCheckIn.lastMakeupWeek = week;
+            save.dailyCheckIn.makeupCountThisWeek = 0;
+            StorageManager.save(save);
+        }
+        if (save.dailyCheckIn.makeupCountThisWeek >= 2) {
+            WXAPI.showToast('本周补签次数已用完', 'none');
+            return;
+        }
+
+        const result = await AdManager.showRewardedVideo('check_in_makeup');
+        if (!result.completed) {
+            WXAPI.showToast(result.message, 'none');
+            return;
+        }
+
+        save.dailyCheckIn.makeupCountThisWeek += 1;
+        save.dailyCheckIn.consecutiveDays = Math.max(1, save.dailyCheckIn.consecutiveDays + 1);
+        save.dailyCheckIn.checkInHistory[(save.dailyCheckIn.consecutiveDays - 1) % DAILY_CHECKIN_REWARDS.length] = true;
+        StorageManager.save(save);
+        this.syncAdAchievementProgress();
+        void CloudSaveManager.uploadSave();
+        WXAPI.showToast('补签成功，连续签到已延续', 'success');
+        this.showDailyCheckInPanel();
+    }
+
+    private showAchievementPanel(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+        const save = StorageManager.load();
+        this.syncDerivedAchievementProgress(save);
+
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 620, 820, '#FFFFFF', 22, 255, true);
+        panel.setScale(new Vec3(0.84, 0.84, 1));
+        this.createLabel(panel, '成就', 42, new Vec3(0, 356, 0), new Color(45, 52, 54));
+
+        ACHIEVEMENT_CONFIGS.forEach((config, index) => {
+            const progress = save.achievements[config.id];
+            const y = 286 - index * 64;
+            const row = this.createPanel(panel, new Vec3(0, y, 0), 560, 56, progress.completed ? '#F0FFF8' : '#F8F9FA', 14, 255, true);
+            this.createLabel(row, config.name, 20, new Vec3(-204, 8, 0), new Color(45, 52, 54), 128);
+            this.createLabel(row, config.description, 16, new Vec3(-70, -10, 0), new Color(83, 103, 112), 230);
+            this.createLabel(row, `${Math.min(progress.current, config.target)}/${config.target}`, 18, new Vec3(90, 0, 0), new Color(83, 103, 112), 76);
+            const buttonText = progress.claimed ? '已领' : progress.completed ? '领取' : '未达成';
+            const buttonColor = progress.claimed ? '#DFE6E9' : progress.completed ? '#4ECDC4' : '#E8F6F3';
+            this.createButton(row, buttonText, new Vec3(205, 0, 0), 96, 40, buttonColor, () => this.claimAchievementReward(config.id), new Color(45, 52, 54));
+        });
+
+        this.createButton(panel, '关闭', new Vec3(0, -366, 0), 180, 52, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
+        tween(panel).to(0.22, { scale: Vec3.ONE }).start();
+    }
+
+    private claimAchievementReward(achievementId: string): void {
+        const save = StorageManager.load();
+        const config = ACHIEVEMENT_CONFIGS.find((item) => item.id === achievementId);
+        const progress = config ? save.achievements[achievementId] : null;
+        if (!config || !progress || !progress.completed || progress.claimed) {
+            return;
+        }
+
+        progress.claimed = true;
+        save.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, save.coins + (config.rewards.coins ?? 0));
+        save.diamonds = Math.min(GAME_CONFIG.ECONOMY.DIAMOND_CAP, save.diamonds + (config.rewards.diamonds ?? 0));
+        if (config.rewards.themeId && save.unlockedThemes.indexOf(config.rewards.themeId) < 0) {
+            save.unlockedThemes.push(config.rewards.themeId);
+        }
+        StorageManager.save(save);
+        void CloudSaveManager.uploadSave();
+        WXAPI.showToast('成就奖励已领取', 'success');
+        this.showAchievementPanel();
+    }
+
+    private showThemeShopPanel(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+        const save = StorageManager.load();
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 620, 820, '#FFFFFF', 22, 255, true);
+        panel.setScale(new Vec3(0.84, 0.84, 1));
+        this.createLabel(panel, '主题商店', 42, new Vec3(0, 356, 0), new Color(45, 52, 54));
+
+        THEME_CONFIGS.forEach((theme, index) => {
+            const col = index % 2;
+            const row = Math.floor(index / 2);
+            const card = this.createPanel(panel, new Vec3(-145 + col * 290, 240 - row * 160, 0), 250, 138, '#F8F9FA', 16, 255, true);
+            this.drawThemePreview(card, theme, new Vec3(-54, 20, 0));
+            this.createLabel(card, theme.name, 20, new Vec3(40, 42, 0), new Color(45, 52, 54), 128);
+            this.createLabel(card, theme.unlockText, 14, new Vec3(40, 12, 0), new Color(83, 103, 112), 132);
+
+            const unlocked = save.unlockedThemes.indexOf(theme.id) >= 0;
+            const using = save.currentTheme === theme.id;
+            const eligible = this.canUnlockTheme(save, theme);
+            const cost = this.getThemeCostText(theme);
+            const buttonText = using ? '使用中' : unlocked ? '使用' : eligible ? cost : '未解锁';
+            const buttonColor = using ? '#DFE6E9' : unlocked || eligible ? '#4ECDC4' : '#E8F6F3';
+            this.createButton(card, buttonText, new Vec3(40, -42, 0), 122, 38, buttonColor, () => this.handleThemeButton(theme), new Color(45, 52, 54));
+        });
+
+        this.createButton(panel, '关闭', new Vec3(0, -366, 0), 180, 52, '#E8F6F3', () => {
+            this.popupLayer?.removeAllChildren();
+            if (this.state === GameState.MAIN_MENU) {
+                this.showMainMenu();
+            }
+        }, new Color(45, 52, 54));
+        tween(panel).to(0.22, { scale: Vec3.ONE }).start();
+    }
+
+    private showDailyChallengePanel(): void {
+        if (!this.popupLayer) {
+            return;
+        }
+        const save = StorageManager.load();
+        const today = this.getLocalDateKey();
+        const levelId = this.getDailyChallengeLevelId(today);
+        const bestSteps = save.dailyChallenge.bestStepsByDate[today] ?? 0;
+
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 520, 460, '#FFFFFF', 22, 255, true);
+        panel.setScale(new Vec3(0.84, 0.84, 1));
+        this.createLabel(panel, '每日挑战', 42, new Vec3(0, 160, 0), new Color(45, 52, 54));
+        this.createLabel(panel, `今日关卡 ${levelId}`, 28, new Vec3(0, 86, 0), new Color(83, 103, 112));
+        this.createLabel(panel, bestSteps > 0 ? `个人最佳：${bestSteps}步` : '今日还没有完成记录', 24, new Vec3(0, 36, 0), new Color(83, 103, 112), 420);
+        this.createLabel(panel, `刷新倒计时：${this.getDailyChallengeCountdownText()}`, 22, new Vec3(0, -14, 0), new Color(120, 132, 140), 420);
+        this.createButton(panel, '开始挑战', new Vec3(0, -92, 0), 260, 64, '#4ECDC4', () => {
+            this.popupLayer?.removeAllChildren();
+            this.dailyChallengeMode = true;
+            void this.startLevel(levelId);
+        });
+        this.createButton(panel, '关闭', new Vec3(0, -170, 0), 180, 52, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
+        tween(panel).to(0.22, { scale: Vec3.ONE }).start();
+    }
+
+    private normalizeCheckInBreak(save: PlayerSaveData): PlayerSaveData {
+        const today = this.getLocalDateKey();
+        const yesterday = this.getDateOffsetKey(-1);
+        if (save.dailyCheckIn.lastCheckInDate
+            && save.dailyCheckIn.lastCheckInDate !== today
+            && save.dailyCheckIn.lastCheckInDate !== yesterday) {
+            save.dailyCheckIn.consecutiveDays = 0;
+            save.dailyCheckIn.checkInHistory = [false, false, false, false, false, false, false];
+            StorageManager.save(save);
+        }
+        return save;
+    }
+
+    private getCheckInMultiplier(consecutiveDays: number): number {
+        if (consecutiveDays >= 14) {
+            return 2;
+        }
+        if (consecutiveDays >= 7) {
+            return 1.5;
+        }
+        return 1;
+    }
+
+    private updateCompletionAchievements(stars: number): void {
+        const save = StorageManager.load();
+        this.updateAchievementProgress('complete_10', save.statistics.totalLevelsCompleted, 'max', false);
+        this.updateAchievementProgress('complete_100', save.statistics.totalLevelsCompleted, 'max', false);
+        this.updateAchievementProgress('complete_500', save.statistics.totalLevelsCompleted, 'max', false);
         const threeStars = Object.keys(save.levelStars).filter((key) => save.levelStars[Number(key)] >= 3).length;
-        return `当前已通关 ${completed} 关，三星 ${threeStars} 个。成就奖励将在后续版本开放领取。`;
+        this.updateAchievementProgress('three_stars_100', threeStars, 'max', false);
+        if (!this.hintUsedThisLevel) {
+            this.updateAchievementProgress('no_hint_50', 1, 'add', false);
+        }
+        if (stars >= 3) {
+            this.updateAchievementProgress('three_stars_100', threeStars, 'max', false);
+        }
+        if (Date.now() - this.levelStartTime <= 30000) {
+            this.updateAchievementProgress('speed_run', 1, 'max', false);
+        }
+        StorageManager.save(save);
+    }
+
+    private updateAchievementProgress(achievementId: string, value: number, mode: 'add' | 'max' = 'max', saveNow = true): void {
+        const save = StorageManager.load();
+        const config = ACHIEVEMENT_CONFIGS.find((item) => item.id === achievementId);
+        const progress = config ? save.achievements[achievementId] : null;
+        if (!config || !progress || progress.completed) {
+            return;
+        }
+
+        progress.current = mode === 'add' ? progress.current + value : Math.max(progress.current, value);
+        if (progress.current >= config.target) {
+            progress.completed = true;
+            progress.completedAt = Date.now();
+            this.queueAchievementBanner(config);
+        }
+        if (saveNow) {
+            StorageManager.save(save);
+            void CloudSaveManager.uploadSave();
+        }
+    }
+
+    private syncDerivedAchievementProgress(save = StorageManager.load()): void {
+        this.updateAchievementProgress('complete_10', save.statistics.totalLevelsCompleted, 'max', false);
+        this.updateAchievementProgress('complete_100', save.statistics.totalLevelsCompleted, 'max', false);
+        this.updateAchievementProgress('complete_500', save.statistics.totalLevelsCompleted, 'max', false);
+        this.updateAchievementProgress('three_stars_100', Object.keys(save.levelStars).filter((key) => save.levelStars[Number(key)] >= 3).length, 'max', false);
+        this.syncAdAchievementProgress(false);
+        this.syncShareAchievementProgress(false);
+        StorageManager.save(save);
+    }
+
+    private syncAdAchievementProgress(saveNow = true): void {
+        const save = StorageManager.load();
+        this.updateAchievementProgress('ad_watcher_50', save.statistics.totalAdsWatched, 'max', saveNow);
+    }
+
+    private syncShareAchievementProgress(saveNow = true): void {
+        const save = StorageManager.load();
+        this.updateAchievementProgress('share_20', save.social.totalShares, 'max', saveNow);
+    }
+
+    private queueAchievementBanner(config: AchievementConfig): void {
+        this.achievementBannerQueue.push(config);
+        if (!this.isAchievementBannerPlaying) {
+            this.playNextAchievementBanner();
+        }
+    }
+
+    private playNextAchievementBanner(): void {
+        if (!this.popupLayer || this.achievementBannerQueue.length === 0) {
+            this.isAchievementBannerPlaying = false;
+            return;
+        }
+        this.isAchievementBannerPlaying = true;
+        const config = this.achievementBannerQueue.shift();
+        if (!config) {
+            this.isAchievementBannerPlaying = false;
+            return;
+        }
+        const banner = this.createPanel(this.popupLayer, new Vec3(0, 640, 0), 560, 72, '#FFEAA7', 18, 245, true);
+        this.createLabel(banner, `成就解锁：${config.name}`, 26, Vec3.ZERO, new Color(45, 52, 54), 500);
+        tween(banner)
+            .to(0.25, { position: new Vec3(0, 522, 0) }, { easing: 'backOut' })
+            .delay(1.2)
+            .to(0.2, { position: new Vec3(0, 640, 0) })
+            .call(() => {
+                banner.destroy();
+                this.playNextAchievementBanner();
+            })
+            .start();
+    }
+
+    private drawThemePreview(parent: Node, theme: ThemeConfig, position: Vec3): void {
+        const palette = COLOR_PALETTES[theme.id] ?? COLOR_PALETTES.default;
+        const preview = new Node(`Preview_${theme.id}`);
+        parent.addChild(preview);
+        preview.setPosition(position);
+        const graphics = preview.addComponent(Graphics);
+        graphics.strokeColor = colorFromHex('#D7DEE2', 255);
+        graphics.lineWidth = 3;
+        for (let i = 0; i < 4; i += 1) {
+            const x = i * 18;
+            graphics.roundRect(x - 36, -24, 14, 54, 6);
+            graphics.stroke();
+            graphics.fillColor = colorFromHex(palette[i] ?? '#4ECDC4', 255);
+            graphics.roundRect(x - 34, -16, 10, 18 + i * 4, 4);
+            graphics.fill();
+        }
+    }
+
+    private handleThemeButton(theme: ThemeConfig): void {
+        const save = StorageManager.load();
+        if (save.currentTheme === theme.id) {
+            return;
+        }
+        if (save.unlockedThemes.indexOf(theme.id) >= 0) {
+            this.applyTheme(theme);
+            return;
+        }
+        if (!this.canUnlockTheme(save, theme)) {
+            WXAPI.showToast(theme.unlockText, 'none');
+            return;
+        }
+        if (theme.priceCoins && !StorageManager.spendCoins(theme.priceCoins)) {
+            WXAPI.showToast('金币不足', 'none');
+            return;
+        }
+        if (theme.priceDiamonds && !StorageManager.spendDiamonds(theme.priceDiamonds)) {
+            if (theme.priceCoins) {
+                StorageManager.addCoins(theme.priceCoins);
+            }
+            WXAPI.showToast('钻石不足', 'none');
+            return;
+        }
+        StorageManager.unlockTheme(theme.id);
+        this.applyTheme(theme);
+    }
+
+    private applyTheme(theme: ThemeConfig): void {
+        StorageManager.setCurrentTheme(theme.id);
+        void CloudSaveManager.uploadSave();
+        WXAPI.showToast(`主题已切换为：${theme.name}`, 'success');
+        this.drawBackground(theme.backgroundColor);
+        this.showThemeShopPanel();
+    }
+
+    private canUnlockTheme(save: PlayerSaveData, theme: ThemeConfig): boolean {
+        if (save.unlockedThemes.indexOf(theme.id) >= 0) {
+            return true;
+        }
+        if (theme.requiredCompletedLevels && save.completedLevels.length < theme.requiredCompletedLevels) {
+            return false;
+        }
+        if (theme.requiredShares && save.social.totalShares < theme.requiredShares) {
+            return Boolean(theme.achievementId && save.achievements[theme.achievementId]?.completed);
+        }
+        if (theme.requiredAdsWatched && save.statistics.totalAdsWatched < theme.requiredAdsWatched) {
+            return false;
+        }
+        return true;
+    }
+
+    private getThemeCostText(theme: ThemeConfig): string {
+        if (theme.priceCoins) {
+            return `${theme.priceCoins}金币`;
+        }
+        if (theme.priceDiamonds) {
+            return `${theme.priceDiamonds}钻石`;
+        }
+        return '解锁';
+    }
+
+    private completeDailyChallenge(levelId: number, steps: number): void {
+        const save = StorageManager.load();
+        const today = this.getLocalDateKey();
+        const previousBest = save.dailyChallenge.bestStepsByDate[today] ?? 0;
+        const firstCompleteToday = save.dailyChallenge.completedDates.indexOf(today) < 0;
+
+        if (previousBest === 0 || steps < previousBest) {
+            save.dailyChallenge.bestStepsByDate[today] = steps;
+        }
+        if (firstCompleteToday) {
+            save.dailyChallenge.completedDates.push(today);
+            save.dailyChallenge.totalCompletions += 1;
+            save.dailyChallenge.consecutiveDays = save.dailyChallenge.lastChallengeDate === this.getDateOffsetKey(-1)
+                ? save.dailyChallenge.consecutiveDays + 1
+                : 1;
+            save.dailyChallenge.lastChallengeDate = today;
+            save.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, save.coins + 100);
+        }
+        StorageManager.save(save);
+        this.updateAchievementProgress('daily_challenge_7', save.dailyChallenge.consecutiveDays, 'max');
+        void CloudSaveManager.uploadSave();
+        this.showDailyChallengeCompletePopup(levelId, steps, firstCompleteToday, save.dailyChallenge.bestStepsByDate[today]);
+    }
+
+    private showDailyChallengeCompletePopup(levelId: number, steps: number, rewarded: boolean, bestSteps: number): void {
+        if (!this.popupLayer) {
+            return;
+        }
+        this.popupLayer.removeAllChildren();
+        this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 85, true);
+        const popup = this.createPanel(this.popupLayer, Vec3.ZERO, 520, 520, '#FFFFFF', 24, 255, true);
+        popup.setScale(new Vec3(0.78, 0.78, 1));
+        this.createLabel(popup, '挑战完成', 46, new Vec3(0, 178, 0), new Color(45, 52, 54));
+        this.createLabel(popup, `今日关卡 ${levelId}`, 28, new Vec3(0, 108, 0), new Color(83, 103, 112));
+        this.createLabel(popup, `本次 ${steps}步  最佳 ${bestSteps}步`, 26, new Vec3(0, 54, 0), new Color(83, 103, 112), 440);
+        this.createLabel(popup, rewarded ? '每日挑战奖励：金币 +100' : '今日奖励已领取，可继续刷新最佳步数', 22, new Vec3(0, 0, 0), new Color(235, 154, 35), 430);
+        this.createButton(popup, '再试一次', new Vec3(-116, -106, 0), 200, 62, '#E8F6F3', () => {
+            this.popupLayer?.removeAllChildren();
+            this.dailyChallengeMode = true;
+            void this.startLevel(levelId);
+        }, new Color(45, 52, 54));
+        this.createButton(popup, '返回', new Vec3(116, -106, 0), 200, 62, '#4ECDC4', () => {
+            this.dailyChallengeMode = false;
+            this.showMainMenu();
+        });
+        tween(popup).to(0.22, { scale: Vec3.ONE }).start();
+    }
+
+    private getDailyChallengeLevelId(dateKey: string): number {
+        let seed = 0;
+        for (let i = 0; i < dateKey.length; i += 1) {
+            seed = (seed * 31 + dateKey.charCodeAt(i)) % 100000;
+        }
+        return (seed % Math.max(1, this.maxBundledLevelId)) + 1;
+    }
+
+    private getDailyChallengeCountdownText(): string {
+        const now = new Date();
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+        const diff = Math.max(0, tomorrow.getTime() - now.getTime());
+        const hours = Math.floor(diff / 3600000);
+        const minutes = Math.floor((diff % 3600000) / 60000);
+        return `${hours}小时${minutes}分`;
+    }
+
+    private getDateOffsetKey(offsetDays: number): string {
+        const date = new Date();
+        date.setDate(date.getDate() + offsetDays);
+        const year = date.getFullYear();
+        const rawMonth = `${date.getMonth() + 1}`;
+        const rawDay = `${date.getDate()}`;
+        const month = rawMonth.length === 1 ? `0${rawMonth}` : rawMonth;
+        const day = rawDay.length === 1 ? `0${rawDay}` : rawDay;
+        return `${year}-${month}-${day}`;
+    }
+
+    private getWeekKey(): string {
+        const date = new Date();
+        const firstDay = new Date(date.getFullYear(), 0, 1);
+        const dayOfYear = Math.floor((date.getTime() - firstDay.getTime()) / 86400000) + 1;
+        const week = Math.ceil(dayOfYear / 7);
+        return `${date.getFullYear()}-${week}`;
+    }
+
+    private getCurrentThemeBackground(fallback: string): string {
+        const save = StorageManager.load();
+        return THEME_CONFIGS.find((theme) => theme.id === save.currentTheme)?.backgroundColor ?? fallback;
     }
 
     private getLocalDateKey(): string {

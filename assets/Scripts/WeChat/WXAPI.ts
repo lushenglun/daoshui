@@ -14,6 +14,7 @@ export interface SharePayload {
 
 export class WXAPI {
     private static cloudInited = false;
+    private static bannerAd: any | null = null;
 
     static get available(): boolean {
         return typeof wx !== 'undefined';
@@ -154,5 +155,147 @@ export class WXAPI {
         if (this.available && wx.showShareMenu) {
             wx.showShareMenu({ withShareTicket: true });
         }
+    }
+
+    static async showRewardedVideo(adUnitId: string): Promise<boolean> {
+        if (!this.available || !wx.createRewardedVideoAd || !adUnitId) {
+            console.warn('[WXAPI] rewarded video unavailable.');
+            return false;
+        }
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const videoAd = wx.createRewardedVideoAd({ adUnitId });
+            const cleanup = (): void => {
+                if (videoAd.offClose) {
+                    videoAd.offClose(onClose);
+                }
+                if (videoAd.offError) {
+                    videoAd.offError(onError);
+                }
+            };
+            const settle = (value: boolean): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cleanup();
+                resolve(value);
+            };
+            const onClose = (res: { isEnded?: boolean } | undefined): void => {
+                settle(Boolean(res?.isEnded));
+            };
+            const onError = (error: unknown): void => {
+                console.warn('[WXAPI] rewarded video error:', error);
+                settle(false);
+            };
+
+            videoAd.onClose(onClose);
+            videoAd.onError(onError);
+            videoAd.load()
+                .then(() => videoAd.show())
+                .catch((error: unknown) => {
+                    console.warn('[WXAPI] rewarded video load/show failed:', error);
+                    settle(false);
+                });
+        });
+    }
+
+    static preloadRewardedVideo(adUnitId: string): void {
+        if (!this.available || !wx.createRewardedVideoAd || !adUnitId) {
+            return;
+        }
+
+        try {
+            const videoAd = wx.createRewardedVideoAd({ adUnitId });
+            const result = videoAd.load?.();
+            if (result && typeof result.catch === 'function') {
+                result.catch((error: unknown) => console.warn('[WXAPI] preload rewarded video failed:', error));
+            }
+        } catch (error) {
+            console.warn('[WXAPI] preload rewarded video failed:', error);
+        }
+    }
+
+    static async showInterstitial(adUnitId: string): Promise<boolean> {
+        if (!this.available || !wx.createInterstitialAd || !adUnitId) {
+            return false;
+        }
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const interstitialAd = wx.createInterstitialAd({ adUnitId });
+            const settle = (value: boolean): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                resolve(value);
+            };
+            interstitialAd.onError?.((error: unknown) => {
+                console.warn('[WXAPI] interstitial error:', error);
+                settle(false);
+            });
+            interstitialAd.onClose?.(() => settle(true));
+            interstitialAd.load()
+                .then(() => interstitialAd.show())
+                .catch((error: unknown) => {
+                    console.warn('[WXAPI] interstitial load/show failed:', error);
+                    settle(false);
+                });
+        });
+    }
+
+    static createBanner(adUnitId: string): void {
+        if (!this.available || !wx.createBannerAd || !adUnitId || this.bannerAd) {
+            return;
+        }
+
+        try {
+            const info = wx.getSystemInfoSync ? wx.getSystemInfoSync() : { windowWidth: 360, windowHeight: 640 };
+            this.bannerAd = wx.createBannerAd({
+                adUnitId,
+                style: {
+                    left: 0,
+                    top: info.windowHeight - 90,
+                    width: info.windowWidth,
+                },
+            });
+            this.bannerAd.onError?.((error: unknown) => {
+                console.warn('[WXAPI] banner error:', error);
+                this.destroyBanner();
+            });
+        } catch (error) {
+            console.warn('[WXAPI] create banner failed:', error);
+            this.bannerAd = null;
+        }
+    }
+
+    static showBanner(adUnitId: string): void {
+        if (!this.available || !adUnitId) {
+            return;
+        }
+        if (!this.bannerAd) {
+            this.createBanner(adUnitId);
+        }
+        const result = this.bannerAd?.show?.();
+        if (result && typeof result.catch === 'function') {
+            result.catch((error: unknown) => {
+                console.warn('[WXAPI] banner show failed:', error);
+                this.destroyBanner();
+            });
+        }
+    }
+
+    static hideBanner(): void {
+        const result = this.bannerAd?.hide?.();
+        if (result && typeof result.catch === 'function') {
+            result.catch((error: unknown) => console.warn('[WXAPI] banner hide failed:', error));
+        }
+    }
+
+    static destroyBanner(): void {
+        this.bannerAd?.destroy?.();
+        this.bannerAd = null;
     }
 }

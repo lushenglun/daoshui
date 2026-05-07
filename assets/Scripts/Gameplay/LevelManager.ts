@@ -73,6 +73,10 @@ export class LevelManager {
         return action;
     }
 
+    canUndo(): boolean {
+        return this.undoStack.length > 0;
+    }
+
     reset(): void {
         this.currentState = cloneState(this.initialState);
         this.undoStack = [];

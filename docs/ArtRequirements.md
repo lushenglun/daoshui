@@ -1,4 +1,4 @@
-# 《倒水大师》美术需求文档 (Art Requirements)
+# 《倒水乐乐乐》美术需求文档 (Art Requirements)
 
 > **文档版本**: v1.0  
 > **日期**: 2026-04-30  
@@ -185,7 +185,7 @@
 |------|------|------|------|----------|
 | `badge_perfect` | 128×128 | PNG | 完美主义徽章 | `A golden star badge for game achievement, shiny metallic, ribbon at bottom, clean minimal 2D style, transparent background` |
 | `badge_speed` | 128×128 | PNG | 极速通关徽章 | `A lightning bolt speed badge for game achievement, electric blue gradient, clean minimal 2D style, transparent background` |
-| `badge_master` | 128×128 | PNG | 倒水大师徽章 | `A water drop crown badge for game achievement, teal and gold gradient, clean minimal 2D style, transparent background` |
+| `badge_lelele` | 128×128 | PNG | 倒水乐乐乐徽章 | `A water drop crown badge for game achievement, teal and gold gradient, clean minimal 2D style, transparent background` |
 
 ---
 

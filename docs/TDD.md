@@ -1,4 +1,4 @@
-# 《倒水大师》技术开发文档 (TDD)
+# 《倒水乐乐乐》技术开发文档 (TDD)
 
 > **文档版本**: v1.0  
 > **日期**: 2026-04-30  
@@ -432,18 +432,12 @@ class WXAPI {
 
 ```typescript
 class AdManager {
-    // 激励视频
-    static showRewardedVideo(adId: string): Promise<boolean>;
-    
-    // 插屏广告
-    static showInterstitial(adId: string): Promise<boolean>;
-    
-    // Banner广告
-    static showBanner(adId: string, position: BannerPosition): void;
+    static showRewardedVideo(scene: 'hint' | 'undo' | 'double_coins' | 'free_coins'): Promise<RewardedResult>;
+    static showInterstitial(levelId: number): Promise<boolean>;
+    static showBanner(): void;
     static hideBanner(): void;
-    
-    // 预加载
     static preloadAds(): void;
+    static preloadRewardedVideo(): void;
 }
 ```
 
@@ -587,7 +581,7 @@ export const COLOR_PALETTES = {
 
 > 更新时间: 2026-04-30
 
-> 当前版本: v0.3.0 微信测试版
+> 当前版本: v0.4.0 广告体验版
 
 ### 7.1 已完成
 
@@ -614,7 +608,7 @@ export const COLOR_PALETTES = {
 - Gameplay 已增加状态提示文本，用于反馈选择、无效操作、倒水、撤销、重置和提示结果。
 - 已支持双击瓶子自动寻找可倒目标，降低试玩操作成本。
 - v0.2 已实现暂停弹窗基础版：遮罩、继续游戏、重新开始、返回主菜单、二次确认、设置入口。
-- v0.2 已实现设置面板基础版：音乐/音效/震动开关、适龄提示、隐私协议和去广告入口占位。
+- v0.2 已实现设置面板基础版：音乐/音效/震动开关、适龄提示、隐私协议；v0.4 已移除去广告/IAP入口。
 - v0.2 已扩展主菜单入口：签到、排行、设置、商店、每日挑战、成就。
 - v0.2 已实现每日签到基础版：7日循环奖励，金币/钻石写入本地存档。
 - v0.2 已补齐结算弹窗双倍奖励占位，等待微信激励视频广告接入。
@@ -656,7 +650,30 @@ export const COLOR_PALETTES = {
 node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\node_modules\typescript\lib\tsc.js" --noEmit --skipLibCheck
 ```
 
-### 7.4 v0.2 变更记录
+### 7.4 v0.4 云测性能优化记录
+
+**云测输入**: `1778069087_wxcaa9c33b169f6043_testcloud_result.xlsx` 与同批次控制台日志。
+
+**云测结论**:
+- 测试结果成功，网络性能/兼容性评分均为 100。
+- 启动性能 85，运行性能 84；10 台设备均提示建议优化。
+- 启动耗时均值 4317ms，最慢设备约 6152ms；主要耗时集中在代码包下载与启动期 SDK 初始化。
+- FPS 均值 59.0，低端设备 `vivo S1` 为 55 FPS。
+- 内存均值 847.4MB，部分 Android 设备峰值超过 1GB。
+- 控制台发现占位 Banner 广告位触发 `no advertisement`，并出现未处理 promise 错误。
+
+**已完成优化**:
+- `SDKManager.initialize()` 延后云初始化/登录同步与广告预加载，避免首屏刚出现时执行云存档和广告 SDK 调用。
+- `AdManager` 增加广告位 ID 有效性检查；占位 ID 下直接短路，不再调用微信广告 API。
+- `WXAPI.showBanner()` / `hideBanner()` / `preloadRewardedVideo()` 捕获 Promise 失败，避免广告错误进入未处理异常。
+- `GameManager.renderBottles()` 在同一关内复用 Bottle 节点，只更新瓶内状态，减少倒水过程中的节点销毁、重建和 Graphics 分配。
+
+**下轮云测关注**:
+- 启动耗时是否下降，特别是低端 Android 的 6s+ 设备。
+- 控制台是否不再出现 `no advertisement` 未处理错误。
+- `vivo S1` FPS 是否从 55 向 60 回升，内存峰值是否下降。
+
+### 7.5 v0.2 变更记录
 
 **新增状态**: `SETTINGS` — 设置面板状态，可从 `PAUSED` 或 `MAIN_MENU` 进入。
 
@@ -672,7 +689,7 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - `PlayerSaveData.settings` 已绑定 `musicEnabled` / `soundEnabled` / `vibrationEnabled`。
 - `PlayerSaveData.flags.hasShownAgeTip` 用于记录适龄提示是否已展示。
 
-### 7.5 待完成
+### 7.6 待完成
 
 - [x] v0.1 核心玩法闭环（已完成）
 - [x] **v0.2** 完善暂停面板（PausePanel）：遮罩、二次确认、基础弹出动效
@@ -685,14 +702,25 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - [x] v0.3 微信登录与存档云同步（接口封装 + 编辑器降级 + 云函数预留）
 - [x] v0.3 分享功能：文案库、分享触发、每日首次奖励发放
 - [x] v0.3 好友排行榜：主域面板 + 开放数据域消息 + 编辑器预览数据
-- [ ] v0.4 激励视频广告：提示/撤销/双倍金币/通用奖励 四个点位
-- [ ] v0.4 插屏广告：关卡间隔策略
-- [ ] v0.4 Banner 广告：主菜单/选关/结算展示
-- [ ] v0.4 去广告内购：¥6 永久移除插屏+Banner
-- [ ] v0.5 每日签到正式版：补签、连续签到加成、奖励动画
-- [ ] v0.5 成就系统：10个成就配置、解锁动画
-- [ ] v0.5 主题商店：7个主题、预览切换
-- [ ] v0.5 每日挑战：随机关卡、步数排行榜
+- [x] **v0.4** 激励视频广告：提示/撤销/双倍金币/通用奖励 四个点位（**Mock 模式已实现**，真实广告待流量主开通后切开关）
+- [x] **v0.4** 插屏广告：关卡间隔策略（Mock 模式已实现）
+- [x] **v0.4** Banner 广告：主菜单/选关/结算展示（Mock 模式已实现）
+- [x] ~~v0.4 去广告内购~~ — 已决策关闭所有内购/直冲渠道，纯广告变现
+- [x] **v0.5** 每日签到正式版：7天格子动画、连续签到加成、看视频补签、断签重置
+- [x] **v0.5** 成就系统：10个成就配置、解锁动画、成就列表面板、领取奖励
+- [x] **v0.5** 主题商店：7主题卡片预览（迷你瓶子绘制）、金币/钻石解锁、即时切换
+- [x] **v0.5** 每日挑战：日期种子选关、无限重试、个人最佳记录、倒计时
+- [x] **v0.5** 存档扩展：achievements / dailyChallenge / unlockedThemes / currentTheme / currentThemeId
+
+### v0.5 留存运营系统实现记录（2026-05-07）
+
+- 新增 `assets/Scripts/Data/V05Config.ts`，集中维护每日签到奖励、10个成就配置、7套主题配置。
+- 扩展 `PlayerSaveData`：`achievements`、`dailyChallenge`、`unlockedThemes: string[]`、`currentTheme/currentThemeId`、补签周计数字段；`StorageManager.normalizeSaveData()` 兼容旧版数字主题存档。
+- 主菜单入口已接入正式面板：每日签到、主题商店、每日挑战、成就；每日首次进入主菜单会延迟弹出签到面板。
+- 激励广告 Mock 模式默认开启，补签场景使用 `check_in_makeup`，观看次数仍累计到 `ad_watcher_50` 与 VIP 主题进度。
+- 每日挑战采用日期种子固定关卡，记录当天个人最佳步数，首次完成发放 100 金币，可无限重试。
+- 通关、撤销、提示、分享、广告、每日挑战完成已接入成就进度检测；成就达成会播放顶部横幅，并可在成就面板领取奖励。
+- 验证：`node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\node_modules\typescript\lib\tsc.js" --noEmit --skipLibCheck` 通过。
 - [ ] 长期：将运行时 UI 拆分为 Prefab（可选优化）
 - [ ] 长期：接入美术资源替换纯代码绘制（可选优化）
 - [ ] 长期：关卡难度与经济奖励调优（根据上线数据）

@@ -1,4 +1,4 @@
-# 《倒水大师》经济系统与商业化配置文档
+# 《倒水乐乐乐》经济系统与商业化配置文档
 
 > **文档版本**: v1.0  
 > **日期**: 2026-04-30
@@ -50,7 +50,7 @@
 
 | 渠道 | 价格 | 说明 |
 |------|------|------|
-| 去广告包 | 120 | 永久移除插屏/Banner |
+| 去广告包 | 已关闭 | v0.4 决策：不接入 IAP，不能移除插屏/Banner |
 | 补签 | 20/次 | 每日签到补签 |
 | 解锁限定主题 | 100-300 | 高品质/联动主题 |
 | 兑换金币 | 1:100 | 1钻石换100金币 |
@@ -118,92 +118,16 @@
 
 ## 4. 内购商品配置
 
-### 4.1 商品列表
-
-```json
-{
-  "products": [
-    {
-      "id": "remove_ads",
-      "name": "去广告特权",
-      "price": 600,
-      "priceDisplay": "¥6.00",
-      "type": "permanent",
-      "rewards": {
-        "removeInterstitial": true,
-        "removeBanner": true,
-        "keepRewarded": true
-      },
-      "description": "永久移除插屏和Banner广告，保留激励视频"
-    },
-    {
-      "id": "starter_pack",
-      "name": "新手礼包",
-      "price": 100,
-      "priceDisplay": "¥1.00",
-      "type": "consumable",
-      "rewards": {
-        "coins": 500,
-        "diamonds": 50,
-        "hints": 3
-      },
-      "limit": "one_time",
-      "description": "超值新手礼包，限购1次"
-    },
-    {
-      "id": "coin_pack_small",
-      "name": "金币小包",
-      "price": 100,
-      "priceDisplay": "¥1.00",
-      "type": "consumable",
-      "rewards": {
-        "coins": 1000
-      }
-    },
-    {
-      "id": "coin_pack_large",
-      "name": "金币大包",
-      "price": 600,
-      "priceDisplay": "¥6.00",
-      "type": "consumable",
-      "rewards": {
-        "coins": 8000
-      }
-    },
-    {
-      "id": "diamond_pack",
-      "name": "钻石礼包",
-      "price": 1200,
-      "priceDisplay": "¥12.00",
-      "type": "consumable",
-      "rewards": {
-        "diamonds": 200,
-        "coins": 2000,
-        "unlockAllThemes": true
-      }
-    },
-    {
-      "id": "monthly_card",
-      "name": "钻石月卡",
-      "price": 1800,
-      "priceDisplay": "¥18.00",
-      "type": "subscription",
-      "rewards": {
-        "immediateDiamonds": 180,
-        "dailyDiamonds": 30,
-        "durationDays": 30
-      },
-      "description": "立得180钻石，每日再领30钻石"
-    }
-  ]
-}
-```
-
-### 4.2 首充设计
-
-- **首充双倍**: 首次购买任意档位，获得双倍钻石
-- **首充礼包**: 首次充值额外赠送专属"水滴"头像框
-- **限时倒计时**: 新手首充礼包显示24小时倒计时，制造紧迫感
+> ⚠️ **v0.4 决策：所有内购/直冲渠道全部关闭**。为避免审核资质问题（ICP证、虚拟支付资质），本项目采用**纯广告变现（IAA）**模式，不接入任何真实货币支付。
+>
+> 以下配置仅作存档参考，实际开发中不实现：
+> - 去广告包（¥6）
+> - 新手礼包（¥1）
+> - 金币包（¥1/¥6）
+> - 钻石礼包（¥12）
+> - 月卡（¥18）
+>
+> 若未来需要开放内购，需重新评估审核资质要求。
 
 ---
 
@@ -250,7 +174,7 @@
     },
     {
       "id": "complete_500",
-      "name": "倒水大师",
+      "name": "倒水乐乐乐",
       "description": "累计通关500关",
       "target": 500,
       "rewards": { "coins": 500, "diamonds": 20 }
