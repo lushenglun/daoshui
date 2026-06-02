@@ -2,6 +2,7 @@ import { GAME_CONFIG, AD_UNIT_IDS } from '../Data/GameConfig';
 import { PlayerSaveData } from '../Data/GameData';
 import { StorageManager } from '../Core/StorageManager';
 import { WXAPI } from './WXAPI';
+import { CloudSaveManager } from './CloudSaveManager';
 
 export type RewardedScene = 'hint' | 'undo' | 'double_coins' | 'free_coins' | 'check_in_makeup';
 
@@ -24,11 +25,14 @@ export class AdManager {
      * 由 GAME_CONFIG.AD.MOCK_ENABLED 控制，流量主未开通时默认开启
      */
     static get isMockMode(): boolean {
-        return GAME_CONFIG.AD.MOCK_ENABLED;
+        return !GAME_CONFIG.BUILD.DISABLE_ALL_ADS && GAME_CONFIG.AD.MOCK_ENABLED && !GAME_CONFIG.BUILD.IS_RELEASE;
     }
 
     static preloadAds(): void {
         StorageManager.resetAdStatsIfNeeded();
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return;
+        }
         if (this.isMockMode) {
             console.log('[AdManager] Mock mode: preloadAds skipped.');
             return;
@@ -37,6 +41,9 @@ export class AdManager {
     }
 
     static preloadRewardedVideo(): void {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return;
+        }
         if (this.isMockMode) {
             return;
         }
@@ -47,6 +54,9 @@ export class AdManager {
     }
 
     static async showRewardedVideo(scene: RewardedScene): Promise<RewardedResult> {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return { success: false, completed: false, message: '广告功能暂未开放。' };
+        }
         const data = StorageManager.resetAdStatsIfNeeded();
         const stats = data.adStats;
         const now = Date.now();
@@ -63,14 +73,15 @@ export class AdManager {
 
         // ── Mock 模式：模拟广告播放 ──
         if (this.isMockMode) {
-            WXAPI.showToast('🎬 模拟广告播放中…（Mock 模式）', 'none');
+            WXAPI.showToast('广告播放中…', 'none');
             console.log(`[AdManager] Mock rewarded video: scene=${scene}, delay=${GAME_CONFIG.AD.MOCK_REWARDED_DELAY}ms`);
             await this.delay(GAME_CONFIG.AD.MOCK_REWARDED_DELAY);
             stats.rewardedToday += 1;
             stats.lastRewardedTime = Date.now();
             data.statistics.totalAdsWatched += 1;
             StorageManager.save(data);
-            WXAPI.showToast('✅ 模拟广告结束，奖励已发放', 'success');
+            void CloudSaveManager.uploadAdRecord(scene, 'rewarded', data);
+            WXAPI.showToast('奖励已发放', 'success');
             return { success: true, completed: true, message: '奖励已发放。' };
         }
 
@@ -88,10 +99,14 @@ export class AdManager {
         stats.lastRewardedTime = now;
         data.statistics.totalAdsWatched += 1;
         StorageManager.save(data);
+        void CloudSaveManager.uploadAdRecord(scene, 'rewarded', data);
         return { success: true, completed: true, message: '奖励已发放。' };
     }
 
     static async showInterstitial(levelId: number): Promise<boolean> {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return false;
+        }
         const data = StorageManager.resetAdStatsIfNeeded();
         const stats = data.adStats;
         const now = Date.now();
@@ -117,6 +132,7 @@ export class AdManager {
             stats.interstitialToday += 1;
             stats.lastInterstitialTime = Date.now();
             StorageManager.save(data);
+            void CloudSaveManager.uploadAdRecord(`level_${levelId}`, 'interstitial', data);
             return true;
         }
 
@@ -130,11 +146,15 @@ export class AdManager {
             stats.interstitialToday += 1;
             stats.lastInterstitialTime = now;
             StorageManager.save(data);
+            void CloudSaveManager.uploadAdRecord(`level_${levelId}`, 'interstitial', data);
         }
         return shown;
     }
 
     static createBanner(): void {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return;
+        }
         if (this.isMockMode) {
             console.log('[AdManager] Mock mode: createBanner skipped.');
             return;
@@ -146,6 +166,9 @@ export class AdManager {
     }
 
     static showBanner(): void {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return;
+        }
         if (this.isMockMode) {
             console.log('[AdManager] Mock mode: showBanner skipped.');
             return;
@@ -157,6 +180,9 @@ export class AdManager {
     }
 
     static hideBanner(): void {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return;
+        }
         if (this.isMockMode) {
             console.log('[AdManager] Mock mode: hideBanner skipped.');
             return;
@@ -165,6 +191,9 @@ export class AdManager {
     }
 
     static destroyBanner(): void {
+        if (GAME_CONFIG.BUILD.DISABLE_ALL_ADS) {
+            return;
+        }
         if (this.isMockMode) {
             console.log('[AdManager] Mock mode: destroyBanner skipped.');
             return;

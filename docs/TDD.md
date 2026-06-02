@@ -15,9 +15,7 @@ assets/
 ├── Scripts/
 │   ├── Core/                   # 核心框架
 │   │   ├── GameManager.ts      # 游戏主管理器（单例）
-│   │   ├── EventManager.ts     # 全局事件系统
 │   │   ├── AudioManager.ts     # 音效管理器
-│   │   ├── UIManager.ts        # UI管理器（弹窗、层级）
 │   │   ├── StorageManager.ts   # 存档管理器
 │   │   └── SDKManager.ts       # 微信SDK封装
 │   ├── Gameplay/               #  gameplay逻辑
@@ -581,13 +579,13 @@ export const COLOR_PALETTES = {
 
 > 更新时间: 2026-04-30
 
-> 当前版本: v0.4.0 广告体验版
+> 当前版本: v0.5.3 存档隔离热修复版
 
 ### 7.1 已完成
 
 - `Gameplay.scene` 已挂接 `GameManager`，预览场景即可进入游戏主流程。
 - 已按 TDD 目录创建脚本结构：
-  - `Core/`: `GameManager`、`StorageManager`、`EventManager`、`AudioManager`、`UIManager`、`SDKManager`
+  - `Core/`: `GameManager`、`StorageManager`、`AudioManager`、`SDKManager`
   - `Gameplay/`: `LevelManager`、`Bottle`、`PourController`、`WaterSortRules`、`HintSystem`、`UndoSystem`
   - `Data/`: `GameConfig`、`GameData`、`LevelConfig`
   - `UI/`: 主菜单、选关、游戏、暂停、结算、设置、排行榜面板脚本占位
@@ -620,7 +618,7 @@ export const COLOR_PALETTES = {
 - v0.3 已接入微信测试底座：
   - `WXAPI` 封装登录、分享、开放数据域消息、用户云排行榜字段写入。
   - `SDKManager` 启动后静默登录并触发云存档同步，失败不阻塞试玩。
-  - `CloudSaveManager` 支持云函数预留与编辑器本地 shadow 存档降级，合并策略按 `lastSaveTime` + 进度/星级取高。
+  - `CloudSaveManager` 通过 `getOpenId` 云函数获取用户标识，支持编辑器本地 shadow 存档降级；云端读写依赖 `kv_saves` 创建者权限隔离，合并策略按进度/星级/成就取安全并集。
   - `ShareManager` 支持主菜单分享求助每日首次 50 金币奖励，以及结算分享炫耀。
   - `RankManager` 支持好友排行榜入口与编辑器预览数据，微信环境会向开放数据域发送绘制消息。
 - v0.3 QA 修复记录（2026-05-01）：
@@ -640,7 +638,7 @@ export const COLOR_PALETTES = {
 - 后续接入美术资源时，建议将运行时绘制的按钮、瓶子、弹窗逐步替换为 Prefab，但保持 `LevelManager` 与 `WaterSortRules` 不依赖 UI。
 - Cocos 资源挂接依赖 `.meta` UUID；如果脚本 `.meta` 被编辑器重建，需要检查 `Gameplay.scene` 中 `GameManager` 的组件引用是否仍有效。
 - `LevelManager` 负责关卡数据、合法目标枚举和章节缓存；UI 层不应直接读取其私有字段。
-- 当前本地存档键为 `water_sort_save_v1`，由 `StorageManager` 统一读写。开发期优先使用 GM 面板重置存档，避免手动清错浏览器缓存。
+- 当前本地存档基础键为 `water_sort_save_v1`；微信登录成功后会切换到 `water_sort_save_v1_${openid}`，避免不同用户共用本地/云端存档。开发期优先使用 GM 面板或微信开发者工具存储面板重置当前用户存档，避免手动清错缓存。
 - 弹窗状态回退要显式允许来源状态，例如局内 `PAUSED -> SETTINGS -> PAUSED`。不要只允许 `PLAYING` 打开暂停弹窗，否则设置面板关闭会被状态机拦截。
 - 设置面板开关必须局部刷新，不应通过重建整个 SettingsPanel 更新状态，否则每次切换都会触发弹窗入场动画。
 - 弹窗遮罩、弹窗主体和 GM 摘要等非按钮区域必须吞掉触摸事件，避免事件穿透到底层主菜单/选关按钮。
@@ -712,13 +710,14 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - [x] **v0.5** 每日挑战：日期种子选关、无限重试、个人最佳记录、倒计时
 - [x] **v0.5** 存档扩展：achievements / dailyChallenge / unlockedThemes / currentTheme / currentThemeId
 - [x] **v0.5.1** 审核准备：BUILD 配置化、发布版隐藏 GM、审核期隐藏广告入口
+- [x] **v0.5.3** 存档隔离热修复 + 内存泄漏修复 + 运行时 Bug 修复 + 云存档合并修复 + 反作弊加固 + 死代码清理
 
 ### v0.5 留存运营系统实现记录（2026-05-07）
 
 - 新增 `assets/Scripts/Data/V05Config.ts`，集中维护每日签到奖励、10个成就配置、7套主题配置。
 - 扩展 `PlayerSaveData`：`achievements`、`dailyChallenge`、`unlockedThemes: string[]`、`currentTheme/currentThemeId`、补签周计数字段；`StorageManager.normalizeSaveData()` 兼容旧版数字主题存档。
 - 主菜单入口已接入正式面板：每日签到、主题商店、每日挑战、成就；每日首次进入主菜单会延迟弹出签到面板。
-- 激励广告 Mock 模式默认开启，补签场景使用 `check_in_makeup`，观看次数仍累计到 `ad_watcher_50` 与 VIP 主题进度。
+- 审核/发布配置下 `BUILD.DISABLE_ALL_ADS` 与 `HIDE_AD_ENTRIES_IN_REVIEW` 会隐藏或短路所有广告入口；开发期开广告时，补签场景使用 `check_in_makeup`，观看次数累计到 `ad_watcher_50` 与 VIP 主题进度。
 - 每日挑战采用日期种子固定关卡，记录当天个人最佳步数，首次完成发放 100 金币，可无限重试。
 - 通关、撤销、提示、分享、广告、每日挑战完成已接入成就进度检测；成就达成会播放顶部横幅，并可在成就面板领取奖励。
 - 验证：`node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\node_modules\typescript\lib\tsc.js" --noEmit --skipLibCheck` 通过。

@@ -5,6 +5,50 @@ import { ACHIEVEMENT_CONFIGS } from '../Data/V05Config';
 
 export class StorageManager {
     private static data: PlayerSaveData | null = null;
+    private static activeUserId = '';
+
+    private static getActiveSaveKey(): string {
+        return this.activeUserId
+            ? `${GAME_CONFIG.SAVE.SAVE_KEY}_${this.activeUserId}`
+            : GAME_CONFIG.SAVE.SAVE_KEY;
+    }
+
+    static getActiveUserId(): string {
+        return this.activeUserId;
+    }
+
+    static setUserScope(openId: string): PlayerSaveData {
+        const nextUserId = this.normalizeUserId(openId);
+        if (!nextUserId || nextUserId === this.activeUserId) {
+            return this.load();
+        }
+
+        const canMigrateLegacyLocal = !this.activeUserId;
+        const legacyLocal = canMigrateLegacyLocal ? this.load() : null;
+        const scopedKey = `${GAME_CONFIG.SAVE.SAVE_KEY}_${nextUserId}`;
+        const hasScopedSave = Boolean(sys.localStorage.getItem(scopedKey));
+        this.activeUserId = nextUserId;
+        this.data = null;
+        if (!hasScopedSave && legacyLocal) {
+            const migrated = this.normalizeSaveData(JSON.parse(JSON.stringify(legacyLocal)) as PlayerSaveData);
+            migrated.social.openId = nextUserId;
+            this.save(migrated);
+            return migrated;
+        }
+        return this.load();
+    }
+
+    static hasScopedSave(openId: string): boolean {
+        const userId = this.normalizeUserId(openId);
+        if (!userId) {
+            return false;
+        }
+        return Boolean(sys.localStorage.getItem(`${GAME_CONFIG.SAVE.SAVE_KEY}_${userId}`));
+    }
+
+    private static normalizeUserId(openId: string): string {
+        return openId.replace(/[^a-zA-Z0-9_-]/g, '');
+    }
 
     /** 深度合并对象，确保嵌套属性不会被完全覆盖 */
     private static deepMerge<T>(target: T, source: Partial<T>): T {
@@ -28,7 +72,7 @@ export class StorageManager {
             return this.data;
         }
 
-        const raw = sys.localStorage.getItem(GAME_CONFIG.SAVE.SAVE_KEY);
+        const raw = sys.localStorage.getItem(this.getActiveSaveKey());
         if (!raw) {
             this.data = createDefaultSaveData();
             return this.data;
@@ -49,7 +93,7 @@ export class StorageManager {
     static save(data = this.load()): void {
         data.lastSaveTime = Date.now();
         this.data = data;
-        sys.localStorage.setItem(GAME_CONFIG.SAVE.SAVE_KEY, JSON.stringify(data));
+        sys.localStorage.setItem(this.getActiveSaveKey(), JSON.stringify(data));
     }
 
     static resetToDefault(): PlayerSaveData {
@@ -80,16 +124,29 @@ export class StorageManager {
         });
         base.statistics.totalLevelsCompleted = Math.max(local.statistics.totalLevelsCompleted, remote.statistics.totalLevelsCompleted, base.completedLevels.length);
         base.unlockedThemes = Array.from(new Set([...(local.unlockedThemes ?? []), ...(remote.unlockedThemes ?? [])]));
-        Object.keys(remote.achievements ?? {}).forEach((id) => {
+        const achievementIds = new Set([
+            ...Object.keys(local.achievements ?? {}),
+            ...Object.keys(remote.achievements ?? {}),
+        ]);
+        achievementIds.forEach((id) => {
             const localProgress = local.achievements[id];
             const remoteProgress = remote.achievements[id];
-            if (!localProgress || !remoteProgress) {
+            if (!localProgress && remoteProgress) {
+                base.achievements[id] = { ...remoteProgress };
                 return;
             }
-            base.achievements[id] = remoteProgress.current > localProgress.current ? { ...remoteProgress } : { ...localProgress };
-            base.achievements[id].completed = localProgress.completed || remoteProgress.completed;
-            base.achievements[id].claimed = localProgress.claimed || remoteProgress.claimed;
-            base.achievements[id].completedAt = Math.max(localProgress.completedAt, remoteProgress.completedAt);
+            if (localProgress && !remoteProgress) {
+                base.achievements[id] = { ...localProgress };
+                return;
+            }
+            if (localProgress && remoteProgress) {
+                base.achievements[id] = {
+                    current: Math.max(localProgress.current, remoteProgress.current),
+                    completed: localProgress.completed || remoteProgress.completed,
+                    claimed: localProgress.claimed || remoteProgress.claimed,
+                    completedAt: Math.max(localProgress.completedAt, remoteProgress.completedAt),
+                };
+            }
         });
         base.dailyChallenge.bestStepsByDate = { ...local.dailyChallenge.bestStepsByDate };
         Object.keys(remote.dailyChallenge.bestStepsByDate ?? {}).forEach((date) => {

@@ -16,7 +16,7 @@
 | 核心玩法 | 选关、倒水、通关结算、暂停、设置（与 v0.2 一致的主链路） |
 | 微信登录 | `wx.login` 获取 code；失败有提示，不阻塞本地试玩 |
 | 云开发初始化 | `wx.cloud.init` 启动期调用成功，无「please call wx.cloud.init first」 |
-| 云存档（当前实现） | 客户端 **`wx.cloud.database()`** 读写集合 **`kv_saves`**（按 `openid` + 业务 key） |
+| 云存档（当前实现） | `getOpenId` 云函数获取用户标识；客户端 **`wx.cloud.database()`** 读写集合 **`kv_saves`**（按业务 key 查询，依赖集合创建者权限隔离） |
 | 分享 | 主菜单「分享求助」、结算「分享炫耀」；主菜单侧含**每日首次**金币奖励与防刷逻辑 |
 | 其他 | GM、签到、商店/挑战等入口若为占位或弱依赖，以**不崩溃、无误导严重文案**为准 |
 
@@ -80,12 +80,12 @@
 ### 3.2 云数据库
 
 - [ ] 集合 **`kv_saves`** 已创建。
-- [ ] **权限与安全规则**：确保用户仅能读写自身数据（按 `_openid` 或官方推荐规则），**禁止**误配为全员可读写。
+- [ ] **权限与安全规则**：`kv_saves` 必须设置为仅创建者可读写/仅创建者可写读自身数据，**禁止**误配为全员可读写；这是 V0.5.3 存档隔离的上线阻断项。
 - [ ] （若使用）`rank_data` 等与排行相关的集合：若体验版未使用真实排行，可暂不对外说明或保持最小权限。
 
-### 3.3 构建目录中的云函数（若团队仍保留）
+### 3.3 构建目录中的云函数
 
-- 当前存档主线以 **客户端直连数据库** 为主；若 `build/wechatgame` 下仍有 `cloudfunctions`，确认与线上策略一致，避免文档与实现两套说法。
+- V0.5.3 必须保留并部署 `cloudfunctions/getOpenId`。每次 Cocos 重新构建后，确认 `build/wechatgame/project.config.json` 含 `cloudfunctionRoot`，且 `build/wechatgame/cloudfunctions/getOpenId` 存在。
 
 ---
 

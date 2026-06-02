@@ -6,6 +6,7 @@ import {
     Graphics,
     Label,
     Node,
+    Tween,
     tween,
     UITransform,
     Vec3,
@@ -82,11 +83,21 @@ export class GameManager extends Component {
         this.scheduleOnce(() => this.tryShowDailyCheckInOnLaunch(), 0.5);
     }
 
+    onDestroy(): void {
+        SDKManager.cleanup();
+        this.safeClear(this.viewRoot);
+        this.safeClear(this.popupLayer);
+        this.safeClear(this.background);
+        if (GameManager.instance === this) {
+            GameManager.instance = null;
+        }
+    }
+
     private buildBaseLayers(): void {
         ['Background', 'ViewRoot', 'PopupLayer'].forEach((name) => {
             const child = this.node.getChildByName(name);
             if (child) {
-                child.destroy();
+                this.safeDestroyNode(child);
             }
         });
 
@@ -119,7 +130,9 @@ export class GameManager extends Component {
             void this.showLevelSelect();
         });
         this.createQuickMenuButton('签到', new Vec3(-210, -72, 0), () => this.showDailyCheckInPanel());
-        this.createQuickMenuButton('排行', new Vec3(-70, -72, 0), () => this.showRankPanel());
+        if (!GAME_CONFIG.BUILD.IS_RELEASE) {
+            this.createQuickMenuButton('排行', new Vec3(-70, -72, 0), () => this.showRankPanel());
+        }
         this.createQuickMenuButton('设置', new Vec3(70, -72, 0), () => this.showSettingsPanel(GameState.MAIN_MENU));
         this.createQuickMenuButton('商店', new Vec3(210, -72, 0), () => this.showThemeShopPanel());
         this.createButton(this.viewRoot, '每日挑战', new Vec3(-130, -210, 0), 200, 58, '#FFFFFF', () => this.showDailyChallengePanel());
@@ -134,7 +147,9 @@ export class GameManager extends Component {
         }
 
         this.createLabel(this.viewRoot, `金币 ${StorageManager.load().coins}`, 28, new Vec3(0, -374, 0), new Color(64, 82, 90));
-        this.createLabel(this.viewRoot, 'v0.5 留存运营版', 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
+        if (!GAME_CONFIG.BUILD.IS_RELEASE) {
+            this.createLabel(this.viewRoot, `v${GAME_CONFIG.VERSION}`, 22, new Vec3(0, -520, 0), new Color(120, 140, 148));
+        }
     }
 
     private async showLevelSelect(): Promise<void> {
@@ -304,7 +319,7 @@ export class GameManager extends Component {
             return;
         }
 
-        layer.removeAllChildren();
+        this.safeClear(layer);
         this.bottles = [];
 
         const rows = count <= 4 ? 1 : count <= 8 ? 2 : 3;
@@ -529,16 +544,17 @@ export class GameManager extends Component {
 
         this.state = GameState.PAUSED;
         AdManager.hideBanner();
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 95, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 480, 300, '#FFFFFF', 24, 255, true);
+        const reviewMode = GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW;
         this.createLabel(panel, title, 34, new Vec3(0, 86, 0), new Color(45, 52, 54));
-        this.createLabel(panel, message, 22, new Vec3(0, 26, 0), new Color(83, 103, 112), 400);
-        this.createButton(panel, '取消', new Vec3(-105, -84, 0), 160, 58, '#E8F6F3', () => {
-            this.popupLayer?.removeAllChildren();
+        this.createLabel(panel, reviewMode ? '金币不足，暂时无法使用该功能。' : message, 22, new Vec3(0, 26, 0), new Color(83, 103, 112), 400);
+        this.createButton(panel, reviewMode ? '知道了' : '取消', new Vec3(reviewMode ? 0 : -105, -84, 0), 160, 58, '#E8F6F3', () => {
+            this.clearPopup();
             this.state = GameState.PLAYING;
         });
-        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+        if (!reviewMode) {
             this.createButton(panel, '看视频', new Vec3(105, -84, 0), 160, 58, '#4ECDC4', () => {
                 void this.handleRewardedChoice(scene, onReward);
             });
@@ -547,7 +563,7 @@ export class GameManager extends Component {
 
     private async handleRewardedChoice(scene: RewardedScene, onReward: () => void): Promise<void> {
         const result = await AdManager.showRewardedVideo(scene);
-        this.popupLayer?.removeAllChildren();
+        this.clearPopup();
         this.state = GameState.PLAYING;
         if (!result.completed) {
             this.showStatus(result.message);
@@ -605,24 +621,26 @@ export class GameManager extends Component {
         this.createLabel(popup, `获得金币 +${result.coins}`, 30, new Vec3(0, -4, 0), new Color(235, 154, 35));
         const rewardNotice = this.createLabel(popup, '', 18, new Vec3(0, -58, 0), new Color(120, 132, 140), 420);
         let doubleClaimed = false;
-        this.createButton(popup, '双倍奖励', new Vec3(-125, -112, 0), 210, 66, '#FFEAA7', () => {
-            if (doubleClaimed) {
-                rewardNotice.string = '双倍奖励已领取。';
-                return;
-            }
-            void this.handleDoubleCoinsAd(result.coins, rewardNotice, () => {
-                doubleClaimed = true;
+        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            this.createButton(popup, '双倍奖励', new Vec3(-125, -112, 0), 210, 66, '#FFEAA7', () => {
+                if (doubleClaimed) {
+                    rewardNotice.string = '双倍奖励已领取。';
+                    return;
+                }
+                void this.handleDoubleCoinsAd(result.coins, rewardNotice, () => {
+                    doubleClaimed = true;
+                });
             });
-        });
-        this.createButton(popup, '下一关', new Vec3(125, -112, 0), 210, 66, '#4ECDC4', () => {
-            this.popupLayer?.removeAllChildren();
+        }
+        this.createButton(popup, '下一关', new Vec3(GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW ? 0 : 125, -112, 0), 210, 66, '#4ECDC4', () => {
+            this.clearPopup();
             void this.goToNextLevelWithInterstitial(level.levelId);
         });
         this.createButton(popup, '分享炫耀', new Vec3(-125, -210, 0), 210, 58, '#E8F6F3', () => {
             void this.handleResultShare(level.levelId, this.levelManager.steps, result.stars, rewardNotice);
         }, new Color(45, 52, 54));
         this.createButton(popup, '返回选关', new Vec3(125, -210, 0), 210, 58, '#EAF4F4', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             void this.returnToLevelSelectWithInterstitial(level.levelId);
         }, new Color(45, 52, 54));
 
@@ -635,7 +653,7 @@ export class GameManager extends Component {
         }
 
         this.state = GameState.PAUSED;
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 115)
             .on(Node.EventType.TOUCH_END, () => this.resumeGame());
 
@@ -644,7 +662,7 @@ export class GameManager extends Component {
         this.createLabel(panel, '游戏暂停', 46, new Vec3(0, 205, 0), new Color(45, 52, 54));
         this.createButton(panel, '继续游戏', new Vec3(0, 112, 0), 320, 72, '#4ECDC4', () => this.resumeGame());
         this.createButton(panel, '重新开始', new Vec3(0, 18, 0), 320, 72, '#E8F6F3', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             this.state = GameState.PLAYING;
             this.resetLevel();
         });
@@ -658,7 +676,7 @@ export class GameManager extends Component {
         if (this.state !== GameState.PAUSED) {
             return;
         }
-        this.popupLayer?.removeAllChildren();
+        this.clearPopup();
         this.state = GameState.PLAYING;
         AdManager.hideBanner();
         this.showStatus('继续游戏');
@@ -669,7 +687,7 @@ export class GameManager extends Component {
             return;
         }
 
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 125, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 420, 260, '#FFFFFF', 24, 255, true);
         this.createLabel(panel, '确定要返回主菜单吗？', 30, new Vec3(0, 70, 0), new Color(45, 52, 54));
@@ -686,7 +704,7 @@ export class GameManager extends Component {
         this.previousStateBeforeSettings = previousState;
         this.state = GameState.SETTINGS;
         AdManager.hideBanner();
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, previousState === GameState.PAUSED ? 115 : 70, true);
 
         const save = StorageManager.load();
@@ -716,13 +734,13 @@ export class GameManager extends Component {
 
         this.createPanel(panel, new Vec3(0, -62, 0), 440, 2, '#E8F6F3', 1);
         this.createButton(panel, '适龄提示 (12+)', new Vec3(0, -122, 0), 400, 58, '#F8F9FA', () => this.showAgeTipPanel());
-        this.createButton(panel, '隐私协议', new Vec3(0, -192, 0), 400, 58, '#F8F9FA', () => this.showInfoPanel('隐私协议', '隐私协议将在微信小游戏发布前接入正式页面。'));
+        this.createButton(panel, '隐私协议', new Vec3(0, -192, 0), 400, 58, '#F8F9FA', () => this.showInfoPanel('隐私协议', '我们仅在游戏运行、存档同步与分享所需范围内处理必要信息。详细政策以微信小游戏平台展示的隐私指引为准。'));
         if (!GAME_CONFIG.BUILD.IS_RELEASE) {
             this.createButton(panel, 'GM', new Vec3(-198, -270, 0), 74, 42, '#E8F6F3', () => this.showGmPanel());
+            this.createButton(panel, '同步', new Vec3(-106, -270, 0), 74, 42, '#E8F6F3', () => {
+                void this.handleManualSync();
+            });
         }
-        this.createButton(panel, '同步', new Vec3(-106, -270, 0), 74, 42, '#E8F6F3', () => {
-            void this.handleManualSync();
-        });
         this.createLabel(panel, `版本 ${GAME_CONFIG.VERSION}`, 20, new Vec3(32, -270, 0), new Color(178, 190, 195), 260);
 
         tween(panel).to(0.24, { scale: Vec3.ONE }).start();
@@ -734,7 +752,7 @@ export class GameManager extends Component {
             return;
         }
 
-        this.popupLayer?.removeAllChildren();
+        this.clearPopup();
         this.state = this.previousStateBeforeSettings;
         if (this.state === GameState.MAIN_MENU || this.state === GameState.LEVEL_SELECT || this.state === GameState.LEVEL_COMPLETE) {
             AdManager.showBanner();
@@ -747,13 +765,13 @@ export class GameManager extends Component {
         }
 
         const restoreSettings = this.state === GameState.SETTINGS;
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 105, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 480, '#FFFFFF', 24, 255, true);
         this.createLabel(panel, '适龄提示', 42, new Vec3(0, 160, 0), new Color(45, 52, 54));
         this.createLabel(panel, '《倒水乐乐乐》适用于 12 周岁及以上用户。游戏为轻度益智解谜内容，不含真实支付引导内容；请合理安排游戏时间。', 24, new Vec3(0, 40, 0), new Color(83, 103, 112), 455);
         this.createButton(panel, '我知道了', new Vec3(0, -150, 0), 220, 64, '#4ECDC4', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             if (restoreSettings) {
                 this.showSettingsPanel(this.previousStateBeforeSettings);
             }
@@ -766,14 +784,14 @@ export class GameManager extends Component {
         }
 
         const stateBeforeInfo = this.state;
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 88, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 500, 340, '#FFFFFF', 24, 255, true);
         panel.setScale(new Vec3(0.85, 0.85, 1));
         this.createLabel(panel, title, 38, new Vec3(0, 104, 0), new Color(45, 52, 54));
         this.createLabel(panel, message, 24, new Vec3(0, 16, 0), new Color(83, 103, 112), 410);
         this.createButton(panel, '知道了', new Vec3(0, -104, 0), 190, 58, '#4ECDC4', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             if (stateBeforeInfo === GameState.SETTINGS) {
                 this.showSettingsPanel(this.previousStateBeforeSettings);
             } else {
@@ -789,7 +807,7 @@ export class GameManager extends Component {
         }
 
         this.state = GameState.MAIN_MENU;
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 88, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 540, 620, '#FFFFFF', 24, 255, true);
         panel.setScale(new Vec3(0.86, 0.86, 1));
@@ -804,7 +822,7 @@ export class GameManager extends Component {
         this.createLabel(panel, WXAPI.available ? '微信开放数据域绘制中' : '编辑器预览数据', 20, new Vec3(0, -202, 0), new Color(120, 140, 148), 420);
         this.createButton(panel, '返回', new Vec3(0, -258, 0), 200, 58, '#E8F6F3', () => {
             RankManager.closeRank();
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             this.state = GameState.MAIN_MENU;
         }, new Color(45, 52, 54));
         tween(panel).to(0.2, { scale: Vec3.ONE }).start();
@@ -887,7 +905,7 @@ export class GameManager extends Component {
         }
 
         this.state = GameState.SETTINGS;
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 100, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 600, '#FFFFFF', 24, 255, true);
         panel.setScale(new Vec3(0.86, 0.86, 1));
@@ -904,7 +922,7 @@ export class GameManager extends Component {
             return;
         }
 
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 125, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 500, 300, '#FFFFFF', 24, 255, true);
         this.createLabel(panel, '确认重置存档？', 34, new Vec3(0, 82, 0), new Color(45, 52, 54));
@@ -916,7 +934,7 @@ export class GameManager extends Component {
     private resetSaveAndReturn(): void {
         StorageManager.resetToDefault();
         void CloudSaveManager.uploadSave();
-        this.popupLayer?.removeAllChildren();
+        this.clearPopup();
         this.showMainMenu();
         this.showInfoPanel('存档已重置', '测试存档已恢复到初始状态。再次开始游戏会从第1关进入。');
     }
@@ -1046,7 +1064,7 @@ export class GameManager extends Component {
         const dayIndex = save.dailyCheckIn.consecutiveDays % DAILY_CHECKIN_REWARDS.length;
         const multiplier = this.getCheckInMultiplier(save.dailyCheckIn.consecutiveDays);
 
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 680, '#FFFFFF', 24, 255, true);
         panel.setScale(new Vec3(0.82, 0.82, 1));
@@ -1079,7 +1097,7 @@ export class GameManager extends Component {
                 void this.makeupYesterdayCheckIn();
             }, new Color(45, 52, 54));
         }
-        this.createButton(panel, '关闭', new Vec3(0, -316, 0), 180, 48, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
+        this.createButton(panel, '关闭', new Vec3(0, -316, 0), 180, 48, '#E8F6F3', () => this.clearPopup(), new Color(45, 52, 54));
 
         tween(panel).to(0.22, { scale: Vec3.ONE }).start();
     }
@@ -1153,13 +1171,13 @@ export class GameManager extends Component {
         const save = StorageManager.load();
         this.syncDerivedAchievementProgress(save);
 
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 620, 820, '#FFFFFF', 22, 255, true);
         panel.setScale(new Vec3(0.84, 0.84, 1));
         this.createLabel(panel, '成就', 42, new Vec3(0, 356, 0), new Color(45, 52, 54));
 
-        ACHIEVEMENT_CONFIGS.forEach((config, index) => {
+        this.getVisibleAchievementConfigs().forEach((config, index) => {
             const progress = save.achievements[config.id];
             const y = 286 - index * 64;
             const row = this.createPanel(panel, new Vec3(0, y, 0), 560, 56, progress.completed ? '#F0FFF8' : '#F8F9FA', 14, 255, true);
@@ -1171,7 +1189,7 @@ export class GameManager extends Component {
             this.createButton(row, buttonText, new Vec3(205, 0, 0), 96, 40, buttonColor, () => this.claimAchievementReward(config.id), new Color(45, 52, 54));
         });
 
-        this.createButton(panel, '关闭', new Vec3(0, -366, 0), 180, 52, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
+        this.createButton(panel, '关闭', new Vec3(0, -366, 0), 180, 52, '#E8F6F3', () => this.clearPopup(), new Color(45, 52, 54));
         tween(panel).to(0.22, { scale: Vec3.ONE }).start();
     }
 
@@ -1201,13 +1219,13 @@ export class GameManager extends Component {
             return;
         }
         const save = StorageManager.load();
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 620, 820, '#FFFFFF', 22, 255, true);
         panel.setScale(new Vec3(0.84, 0.84, 1));
         this.createLabel(panel, '主题商店', 42, new Vec3(0, 356, 0), new Color(45, 52, 54));
 
-        THEME_CONFIGS.forEach((theme, index) => {
+        this.getVisibleThemeConfigs().forEach((theme, index) => {
             const col = index % 2;
             const row = Math.floor(index / 2);
             const card = this.createPanel(panel, new Vec3(-145 + col * 290, 240 - row * 160, 0), 250, 138, '#F8F9FA', 16, 255, true);
@@ -1225,7 +1243,7 @@ export class GameManager extends Component {
         });
 
         this.createButton(panel, '关闭', new Vec3(0, -366, 0), 180, 52, '#E8F6F3', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             if (this.state === GameState.MAIN_MENU) {
                 this.showMainMenu();
             }
@@ -1242,7 +1260,7 @@ export class GameManager extends Component {
         const levelId = this.getDailyChallengeLevelId(today);
         const bestSteps = save.dailyChallenge.bestStepsByDate[today] ?? 0;
 
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
         const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 520, 460, '#FFFFFF', 22, 255, true);
         panel.setScale(new Vec3(0.84, 0.84, 1));
@@ -1251,11 +1269,11 @@ export class GameManager extends Component {
         this.createLabel(panel, bestSteps > 0 ? `个人最佳：${bestSteps}步` : '今日还没有完成记录', 24, new Vec3(0, 36, 0), new Color(83, 103, 112), 420);
         this.createLabel(panel, `刷新倒计时：${this.getDailyChallengeCountdownText()}`, 22, new Vec3(0, -14, 0), new Color(120, 132, 140), 420);
         this.createButton(panel, '开始挑战', new Vec3(0, -92, 0), 260, 64, '#4ECDC4', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             this.dailyChallengeMode = true;
             void this.startLevel(levelId);
         });
-        this.createButton(panel, '关闭', new Vec3(0, -170, 0), 180, 52, '#E8F6F3', () => this.popupLayer?.removeAllChildren(), new Color(45, 52, 54));
+        this.createButton(panel, '关闭', new Vec3(0, -170, 0), 180, 52, '#E8F6F3', () => this.clearPopup(), new Color(45, 52, 54));
         tween(panel).to(0.22, { scale: Vec3.ONE }).start();
     }
 
@@ -1332,6 +1350,9 @@ export class GameManager extends Component {
     }
 
     private syncAdAchievementProgress(saveNow = true): void {
+        if (GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            return;
+        }
         const save = StorageManager.load();
         this.updateAchievementProgress('ad_watcher_50', save.statistics.totalAdsWatched, 'max', saveNow);
     }
@@ -1445,6 +1466,20 @@ export class GameManager extends Component {
         return true;
     }
 
+    private getVisibleAchievementConfigs(): AchievementConfig[] {
+        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            return ACHIEVEMENT_CONFIGS;
+        }
+        return ACHIEVEMENT_CONFIGS.filter((config) => config.id !== 'ad_watcher_50');
+    }
+
+    private getVisibleThemeConfigs(): ThemeConfig[] {
+        if (!GAME_CONFIG.BUILD.HIDE_AD_ENTRIES_IN_REVIEW) {
+            return THEME_CONFIGS;
+        }
+        return THEME_CONFIGS.filter((theme) => theme.id !== 'vip' && !theme.requiredAdsWatched);
+    }
+
     private getThemeCostText(theme: ThemeConfig): string {
         if (theme.priceCoins) {
             return `${theme.priceCoins}金币`;
@@ -1484,7 +1519,7 @@ export class GameManager extends Component {
         if (!this.popupLayer) {
             return;
         }
-        this.popupLayer.removeAllChildren();
+        this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 85, true);
         const popup = this.createPanel(this.popupLayer, Vec3.ZERO, 520, 520, '#FFFFFF', 24, 255, true);
         popup.setScale(new Vec3(0.78, 0.78, 1));
@@ -1493,7 +1528,7 @@ export class GameManager extends Component {
         this.createLabel(popup, `本次 ${steps}步  最佳 ${bestSteps}步`, 26, new Vec3(0, 54, 0), new Color(83, 103, 112), 440);
         this.createLabel(popup, rewarded ? '每日挑战奖励：金币 +100' : '今日奖励已领取，可继续刷新最佳步数', 22, new Vec3(0, 0, 0), new Color(235, 154, 35), 430);
         this.createButton(popup, '再试一次', new Vec3(-116, -106, 0), 200, 62, '#E8F6F3', () => {
-            this.popupLayer?.removeAllChildren();
+            this.clearPopup();
             this.dailyChallengeMode = true;
             void this.startLevel(levelId);
         }, new Color(45, 52, 54));
@@ -1556,8 +1591,8 @@ export class GameManager extends Component {
     }
 
     private clearView(): void {
-        this.viewRoot?.removeAllChildren();
-        this.popupLayer?.removeAllChildren();
+        this.safeClear(this.viewRoot);
+        this.clearPopup();
         this.bottleLayer = null;
         this.bottles = [];
         this.statusLabel = null;
@@ -1583,7 +1618,7 @@ export class GameManager extends Component {
             console.error('[GameManager] background is null in drawBackground');
             return;
         }
-        layer.removeAllChildren();
+        this.safeClear(layer);
         this.createPanel(layer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, hex, 0);
 
         const wave = new Node('SoftWave');
@@ -1594,6 +1629,24 @@ export class GameManager extends Component {
         graphics.roundRect(-380, -64, 760, 128, 64);
         graphics.fill();
         wave.angle = -8;
+    }
+
+    private clearPopup(): void {
+        this.safeClear(this.popupLayer);
+    }
+
+    private safeClear(node: Node | null): void {
+        if (!node) {
+            return;
+        }
+        node.children.slice().forEach((child) => this.safeDestroyNode(child));
+        node.removeAllChildren();
+    }
+
+    private safeDestroyNode(node: Node): void {
+        Tween.stopAllByTarget(node);
+        node.children.slice().forEach((child) => this.safeDestroyNode(child));
+        node.destroy();
     }
 
     private createLayer(name: string, parent: Node = this.node): Node {

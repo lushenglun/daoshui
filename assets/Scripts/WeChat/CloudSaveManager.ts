@@ -14,39 +14,54 @@ export interface CloudSyncResult {
 }
 
 export class CloudSaveManager {
+    private static getCurrentOpenId(data = StorageManager.load()): string {
+        return data.social?.openId || StorageManager.getActiveUserId();
+    }
+
+    private static getShadowKey(openId: string): string {
+        return openId ? `${CLOUD_SHADOW_KEY}_${openId}` : CLOUD_SHADOW_KEY;
+    }
+
     static async syncOnLogin(): Promise<CloudSyncResult> {
         const remote = await this.downloadSave();
         const local = StorageManager.load();
 
         if (!remote) {
             await this.uploadSave(local);
-            return { success: true, source: 'none', message: '云端暂无存档，已用本地存档初始化。' };
+            return { success: true, source: 'none', message: 'cloud save empty, initialized from local save.' };
         }
 
         const merged = this.mergeSaveData(local, remote);
         StorageManager.save(merged);
         await this.uploadSave(merged);
-        return { success: true, source: WXAPI.available ? 'wechat' : 'shadow', message: '云存档已合并到本地。' };
+        return { success: true, source: WXAPI.available ? 'wechat' : 'shadow', message: 'cloud save merged into local save.' };
     }
 
     static async uploadSave(data = StorageManager.load()): Promise<CloudSyncResult> {
+        const openId = this.getCurrentOpenId(data);
+        data.social.openId = openId;
         const payload = JSON.stringify(data);
-        sys.localStorage.setItem(CLOUD_SHADOW_KEY, payload);
+        sys.localStorage.setItem(this.getShadowKey(openId), payload);
 
         const cloud = WXAPI.getCloud();
         if (!cloud?.database) {
             console.log('[CloudSaveManager] uploadSave: no cloud db, shadow only');
-            return { success: true, source: 'shadow', message: '已写入本地云存档影子数据。' };
+            return { success: true, source: 'shadow', message: 'saved to local cloud-shadow data.' };
+        }
+        if (!openId) {
+            console.warn('[CloudSaveManager] uploadSave: openid missing, skip cloud db write');
+            return { success: true, source: 'shadow', message: 'saved locally; cloud sync waits for user identity.' };
         }
 
-        console.log('[CloudSaveManager] uploadSave: writing to cloud db, bytes:', payload.length);
+        console.log('[CloudSaveManager] uploadSave: writing to cloud db, bytes:', payload.length, 'openid:', openId);
         try {
             const db = cloud.database();
             const col = db.collection('kv_saves');
             const key = CLOUD_SAVE_KEY;
-            const record = { key, value: payload, updatedAt: Date.now() };
+            const record = { key, value: payload, updatedAt: Date.now(), ownerOpenId: openId };
 
-            // 查询当前用户是否已有存档（系统自动按 _openid 过滤）
+            // User isolation must be enforced by collection permissions: creator-only read/write.
+            // Keep the client query on business key only to avoid trusting client-provided identity.
             const queryRes = await col.where({ key }).limit(1).get();
             if (queryRes.data.length > 0) {
                 console.log('[CloudSaveManager] uploadSave: updating existing record');
@@ -57,10 +72,10 @@ export class CloudSaveManager {
             }
 
             console.log('[CloudSaveManager] uploadSave: cloud save ok');
-            return { success: true, source: 'wechat', message: '云存档写入成功。' };
+            return { success: true, source: 'wechat', message: 'cloud save uploaded.' };
         } catch (error) {
             console.warn('[CloudSaveManager] direct db write failed, shadow save kept.', error);
-            return { success: true, source: 'shadow', message: '已写入本地云存档影子数据。' };
+            return { success: true, source: 'shadow', message: 'saved to local cloud-shadow data.' };
         }
     }
 
@@ -72,21 +87,29 @@ export class CloudSaveManager {
             return null;
         }
 
+        const openId = this.getCurrentOpenId();
+        if (!openId) {
+            console.warn('[CloudSaveManager] downloadSave: openid missing, skip cloud db read');
+            return null;
+        }
+
         try {
             const db = cloud.database();
             const col = db.collection('kv_saves');
             const key = CLOUD_SAVE_KEY;
 
-            // 查询当前用户的存档（系统自动按 _openid 过滤）
+            // User isolation must be enforced by collection permissions: creator-only read/write.
             const res = await col.where({ key }).limit(1).get();
-            console.log('[CloudSaveManager] downloadSave: query result count:', res.data.length);
+            console.log('[CloudSaveManager] downloadSave: query result count:', res.data.length, 'openid:', openId);
             if (!res.data.length) {
                 return null;
             }
 
             const value = res.data[0].value;
             if (typeof value === 'string') {
-                return JSON.parse(value) as PlayerSaveData;
+                const parsed = StorageManager.normalizeSaveData(JSON.parse(value) as PlayerSaveData);
+                parsed.social.openId = openId;
+                return parsed;
             }
             return null;
         } catch (error) {
@@ -98,6 +121,10 @@ export class CloudSaveManager {
     static async uploadRankFields(data = StorageManager.load()): Promise<void> {
         const cloud = WXAPI.getCloud();
         if (!cloud?.database) {
+            return;
+        }
+        const openId = this.getCurrentOpenId(data);
+        if (!openId) {
             return;
         }
 
@@ -126,28 +153,23 @@ export class CloudSaveManager {
     private static mergeSaveData(local: PlayerSaveData, remote: PlayerSaveData): PlayerSaveData {
         local = StorageManager.normalizeSaveData(local);
         remote = StorageManager.normalizeSaveData(remote);
+        const openId = this.getCurrentOpenId(local);
         const useRemote = remote.lastSaveTime > local.lastSaveTime;
-        const base: PlayerSaveData = useRemote
-            ? JSON.parse(JSON.stringify(remote))
-            : JSON.parse(JSON.stringify(local));
+        const base: PlayerSaveData = StorageManager.normalizeSaveData(JSON.parse(JSON.stringify(local)) as PlayerSaveData);
 
-        // 合并 completedLevels：取并集
         const completedSet = new Set([...local.completedLevels, ...remote.completedLevels]);
         base.completedLevels = Array.from(completedSet).sort((a, b) => a - b);
 
-        // 合并 levelStars：取最大值
         base.levelStars = { ...local.levelStars };
         Object.keys(remote.levelStars).forEach((key) => {
             const k = Number(key);
             base.levelStars[k] = Math.max(base.levelStars[k] ?? 0, remote.levelStars[k] ?? 0);
         });
 
-        // 取较大值
         base.coins = Math.max(local.coins, remote.coins);
         base.diamonds = Math.max(local.diamonds, remote.diamonds);
         base.currentLevel = Math.max(local.currentLevel, remote.currentLevel);
 
-        // 统计取大值
         base.statistics = {
             totalPlayTime: Math.max(local.statistics.totalPlayTime, remote.statistics.totalPlayTime),
             totalLevelsCompleted: Math.max(local.statistics.totalLevelsCompleted, remote.statistics.totalLevelsCompleted),
@@ -156,16 +178,30 @@ export class CloudSaveManager {
         };
 
         base.unlockedThemes = Array.from(new Set([...(local.unlockedThemes ?? []), ...(remote.unlockedThemes ?? [])]));
-        Object.keys(remote.achievements ?? {}).forEach((id) => {
+        const achievementIds = new Set([
+            ...Object.keys(local.achievements ?? {}),
+            ...Object.keys(remote.achievements ?? {}),
+        ]);
+        achievementIds.forEach((id) => {
             const localProgress = local.achievements[id];
             const remoteProgress = remote.achievements[id];
+            if (!localProgress && remoteProgress) {
+                base.achievements[id] = { ...remoteProgress };
+                return;
+            }
+            if (localProgress && !remoteProgress) {
+                base.achievements[id] = { ...localProgress };
+                return;
+            }
             if (!localProgress || !remoteProgress) {
                 return;
             }
-            base.achievements[id] = remoteProgress.current > localProgress.current ? { ...remoteProgress } : { ...localProgress };
-            base.achievements[id].completed = localProgress.completed || remoteProgress.completed;
-            base.achievements[id].claimed = localProgress.claimed || remoteProgress.claimed;
-            base.achievements[id].completedAt = Math.max(localProgress.completedAt, remoteProgress.completedAt);
+            base.achievements[id] = {
+                current: Math.max(localProgress.current, remoteProgress.current),
+                completed: localProgress.completed || remoteProgress.completed,
+                claimed: localProgress.claimed || remoteProgress.claimed,
+                completedAt: Math.max(localProgress.completedAt, remoteProgress.completedAt),
+            };
         });
         base.dailyChallenge.bestStepsByDate = { ...local.dailyChallenge.bestStepsByDate };
         Object.keys(remote.dailyChallenge.bestStepsByDate ?? {}).forEach((date) => {
@@ -177,7 +213,6 @@ export class CloudSaveManager {
         base.dailyChallenge.totalCompletions = Math.max(local.dailyChallenge.totalCompletions, remote.dailyChallenge.totalCompletions);
         base.dailyChallenge.consecutiveDays = Math.max(local.dailyChallenge.consecutiveDays, remote.dailyChallenge.consecutiveDays);
 
-        // 若远程较新，覆盖设置/签到/社交/标记
         if (useRemote) {
             base.settings = { ...remote.settings };
             base.dailyCheckIn = { ...remote.dailyCheckIn };
@@ -185,7 +220,37 @@ export class CloudSaveManager {
             base.social = { ...remote.social };
         }
 
+        base.social.openId = openId;
+        base.social.cloudSyncedAt = Date.now();
         base.lastSaveTime = Date.now();
         return StorageManager.normalizeSaveData(base);
+    }
+
+    static async uploadAdRecord(scene: string, adType: 'rewarded' | 'interstitial', data = StorageManager.load()): Promise<void> {
+        const cloud = WXAPI.getCloud();
+        if (!cloud?.database) {
+            return;
+        }
+        const openId = this.getCurrentOpenId(data);
+        if (!openId) {
+            return;
+        }
+
+        try {
+            const db = cloud.database();
+            await db.collection('ad_records').add({
+                data: {
+                    scene,
+                    adType,
+                    rewardedToday: data.adStats.rewardedToday,
+                    interstitialToday: data.adStats.interstitialToday,
+                    totalAdsWatched: data.statistics.totalAdsWatched,
+                    ownerOpenId: openId,
+                    createdAt: Date.now(),
+                },
+            });
+        } catch (error) {
+            console.warn('[CloudSaveManager] upload ad record failed.', error);
+        }
     }
 }

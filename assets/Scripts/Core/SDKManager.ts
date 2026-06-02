@@ -6,6 +6,7 @@ import { WXAPI } from '../WeChat/WXAPI';
 export class SDKManager {
     private static loginStarted = false;
     private static initialized = false;
+    private static timeouts: number[] = [];
 
     static initialize(): void {
         if (this.initialized) {
@@ -16,13 +17,20 @@ export class SDKManager {
 
         // Keep first screen light: cloud login/sync and ad preloading can wait until
         // after the game is visible and interactive.
-        setTimeout(() => {
+        this.timeouts.push(setTimeout(() => {
             WXAPI.initCloud();
             void this.loginAndSync();
-        }, 1500);
-        setTimeout(() => {
+        }, 1500));
+        this.timeouts.push(setTimeout(() => {
             AdManager.preloadAds();
-        }, 2500);
+        }, 2500));
+    }
+
+    static cleanup(): void {
+        this.timeouts.forEach((id) => clearTimeout(id));
+        this.timeouts = [];
+        this.initialized = false;
+        this.loginStarted = false;
     }
 
     static async loginAndSync(): Promise<boolean> {
@@ -31,10 +39,10 @@ export class SDKManager {
         }
 
         this.loginStarted = true;
-        const save = StorageManager.load();
         const result = await WXAPI.login();
 
         if (!result.success) {
+            const save = StorageManager.load();
             save.social.lastLoginError = result.error;
             StorageManager.save(save);
             console.warn('[SDKManager] login failed:', result.error);
@@ -44,7 +52,15 @@ export class SDKManager {
         }
 
         console.log(`[SDKManager] login code: ${result.code}`);
+        if (result.openId) {
+            StorageManager.setUserScope(result.openId);
+        } else {
+            console.warn('[SDKManager] openid missing, cloud save sync will be skipped.');
+        }
+
+        const save = StorageManager.load();
         save.social.loginCode = result.code;
+        save.social.openId = result.openId;
         save.social.lastLoginTime = Date.now();
         save.social.lastLoginError = '';
         StorageManager.save(save);

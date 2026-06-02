@@ -4,6 +4,7 @@ export interface LoginResult {
     success: boolean;
     code: string;
     error: string;
+    openId: string;
 }
 
 export interface SharePayload {
@@ -71,19 +72,49 @@ export class WXAPI {
     static async login(): Promise<LoginResult> {
         if (!this.available || !wx.login) {
             console.log('[WXAPI] editor mock login code: editor_mock_login_code');
-            return { success: true, code: 'editor_mock_login_code', error: '' };
+            return { success: true, code: 'editor_mock_login_code', error: '', openId: 'editor_mock_openid' };
         }
 
-        return new Promise((resolve) => {
+        const loginResult = await new Promise<LoginResult>((resolve) => {
             wx.login({
                 success: (res: { code?: string }) => {
-                    resolve({ success: Boolean(res.code), code: res.code ?? '', error: res.code ? '' : 'wx.login missing code' });
+                    resolve({ success: Boolean(res.code), code: res.code ?? '', error: res.code ? '' : 'wx.login missing code', openId: '' });
                 },
                 fail: (error: unknown) => {
-                    resolve({ success: false, code: '', error: JSON.stringify(error) });
+                    resolve({ success: false, code: '', error: JSON.stringify(error), openId: '' });
                 },
             });
         });
+
+        if (loginResult.success) {
+            loginResult.openId = await this.getOpenId();
+        }
+
+        return loginResult;
+    }
+
+    static async getOpenId(): Promise<string> {
+        const cloud = this.getCloud();
+        if (!cloud?.callFunction) {
+            return '';
+        }
+
+        const functionNames = ['getOpenId', 'login'];
+        for (const name of functionNames) {
+            try {
+                const res = await cloud.callFunction({ name });
+                const result = res?.result ?? {};
+                const openId = result.openid ?? result.openId ?? result.OPENID ?? result.userInfo?.openid ?? '';
+                if (typeof openId === 'string' && openId) {
+                    console.log(`[WXAPI] openid resolved by cloud function: ${name}`);
+                    return openId;
+                }
+            } catch (error) {
+                console.warn(`[WXAPI] cloud function ${name} failed:`, error);
+            }
+        }
+
+        return '';
     }
 
     static shareAppMessage(payload: SharePayload): Promise<boolean> {

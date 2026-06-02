@@ -50,6 +50,7 @@ export interface PlayerSaveData {
     };
     social: {
         loginCode: string;
+        openId: string;
         lastLoginTime: number;
         lastLoginError: string;
         cloudSyncedAt: number;
@@ -127,6 +128,7 @@ export function createDefaultSaveData(): PlayerSaveData {
         },
         social: {
             loginCode: '',
+            openId: '',
             lastLoginTime: 0,
             lastLoginError: '',
             cloudSyncedAt: 0,
