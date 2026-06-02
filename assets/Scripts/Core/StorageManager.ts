@@ -13,6 +13,10 @@ export class StorageManager {
             : GAME_CONFIG.SAVE.SAVE_KEY;
     }
 
+    private static shouldPersistLocal(): boolean {
+        return !GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE || !this.activeUserId;
+    }
+
     static getActiveUserId(): string {
         return this.activeUserId;
     }
@@ -23,18 +27,8 @@ export class StorageManager {
             return this.load();
         }
 
-        const canMigrateLegacyLocal = !this.activeUserId;
-        const legacyLocal = canMigrateLegacyLocal ? this.load() : null;
-        const scopedKey = `${GAME_CONFIG.SAVE.SAVE_KEY}_${nextUserId}`;
-        const hasScopedSave = Boolean(sys.localStorage.getItem(scopedKey));
         this.activeUserId = nextUserId;
         this.data = null;
-        if (!hasScopedSave && legacyLocal) {
-            const migrated = this.normalizeSaveData(JSON.parse(JSON.stringify(legacyLocal)) as PlayerSaveData);
-            migrated.social.openId = nextUserId;
-            this.save(migrated);
-            return migrated;
-        }
         return this.load();
     }
 
@@ -72,9 +66,10 @@ export class StorageManager {
             return this.data;
         }
 
-        const raw = sys.localStorage.getItem(this.getActiveSaveKey());
+        const raw = this.shouldPersistLocal() ? sys.localStorage.getItem(this.getActiveSaveKey()) : '';
         if (!raw) {
             this.data = createDefaultSaveData();
+            this.data.social.openId = this.activeUserId;
             return this.data;
         }
 
@@ -93,7 +88,9 @@ export class StorageManager {
     static save(data = this.load()): void {
         data.lastSaveTime = Date.now();
         this.data = data;
-        sys.localStorage.setItem(this.getActiveSaveKey(), JSON.stringify(data));
+        if (this.shouldPersistLocal()) {
+            sys.localStorage.setItem(this.getActiveSaveKey(), JSON.stringify(data));
+        }
     }
 
     static resetToDefault(): PlayerSaveData {

@@ -28,29 +28,46 @@ export class CloudSaveManager {
 
         if (!remote) {
             await this.uploadSave(local);
-            return { success: true, source: 'none', message: 'cloud save empty, initialized from local save.' };
+            return { success: true, source: 'none', message: 'cloud save empty, initialized from current runtime save.' };
+        }
+
+        if (GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE) {
+            remote.social.openId = this.getCurrentOpenId(local);
+            remote.social.cloudSyncedAt = Date.now();
+            StorageManager.replaceWith(remote);
+            return { success: true, source: WXAPI.available ? 'wechat' : 'shadow', message: 'cloud save loaded as authoritative runtime save.' };
         }
 
         const merged = this.mergeSaveData(local, remote);
         StorageManager.save(merged);
         await this.uploadSave(merged);
-        return { success: true, source: WXAPI.available ? 'wechat' : 'shadow', message: 'cloud save merged into local save.' };
+        return { success: true, source: WXAPI.available ? 'wechat' : 'shadow', message: 'cloud save merged into runtime save.' };
     }
 
     static async uploadSave(data = StorageManager.load()): Promise<CloudSyncResult> {
         const openId = this.getCurrentOpenId(data);
         data.social.openId = openId;
         const payload = JSON.stringify(data);
-        sys.localStorage.setItem(this.getShadowKey(openId), payload);
+        if (!GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE || !openId) {
+            sys.localStorage.setItem(this.getShadowKey(openId), payload);
+        }
 
         const cloud = WXAPI.getCloud();
         if (!cloud?.database) {
             console.log('[CloudSaveManager] uploadSave: no cloud db, shadow only');
-            return { success: true, source: 'shadow', message: 'saved to local cloud-shadow data.' };
+            return {
+                success: true,
+                source: 'shadow',
+                message: GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE ? 'cloud unavailable; runtime save not persisted locally.' : 'saved to local cloud-shadow data.',
+            };
         }
         if (!openId) {
             console.warn('[CloudSaveManager] uploadSave: openid missing, skip cloud db write');
-            return { success: true, source: 'shadow', message: 'saved locally; cloud sync waits for user identity.' };
+            return {
+                success: true,
+                source: 'shadow',
+                message: GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE ? 'openid missing; runtime save not persisted locally.' : 'saved locally; cloud sync waits for user identity.',
+            };
         }
 
         console.log('[CloudSaveManager] uploadSave: writing to cloud db, bytes:', payload.length, 'openid:', openId);
@@ -74,8 +91,12 @@ export class CloudSaveManager {
             console.log('[CloudSaveManager] uploadSave: cloud save ok');
             return { success: true, source: 'wechat', message: 'cloud save uploaded.' };
         } catch (error) {
-            console.warn('[CloudSaveManager] direct db write failed, shadow save kept.', error);
-            return { success: true, source: 'shadow', message: 'saved to local cloud-shadow data.' };
+            console.warn('[CloudSaveManager] direct db write failed.', error);
+            return {
+                success: true,
+                source: 'shadow',
+                message: GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE ? 'cloud write failed; runtime save not persisted locally.' : 'saved to local cloud-shadow data.',
+            };
         }
     }
 

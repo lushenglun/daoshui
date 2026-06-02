@@ -10,9 +10,9 @@ export const GAME_CONFIG = {
     /** 构建与发布配置 */
     BUILD: {
         /** 是否为发布版本（true = 隐藏 GM 工具等开发功能） */
-        IS_RELEASE: false,
+        IS_RELEASE: true,
         /** 审核期间是否隐藏所有广告入口（流量主未开通前建议开启） */
-        HIDE_AD_ENTRIES_IN_REVIEW: false,
+        HIDE_AD_ENTRIES_IN_REVIEW: true,
         /** 总广告开关：true 时禁止所有真实/Mock 广告调用 */
         DISABLE_ALL_ADS: true,
     },
@@ -127,6 +127,8 @@ export const GAME_CONFIG = {
     SAVE: {
         /** 存档键名 */
         SAVE_KEY: 'water_sort_save_v1',
+        /** true = 云端为唯一权威存档；登录后本地只保留运行时内存态，不持久化用户进度 */
+        CLOUD_AUTHORITATIVE: true,
         /** 自动存档间隔（秒） */
         AUTO_SAVE_INTERVAL: 30,
     },
