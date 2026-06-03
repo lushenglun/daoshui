@@ -6,6 +6,7 @@ import { WXAPI } from './WXAPI';
 
 const CLOUD_SAVE_KEY = `${GAME_CONFIG.SAVE.SAVE_KEY}_cloud`;
 const CLOUD_SHADOW_KEY = `${GAME_CONFIG.SAVE.SAVE_KEY}_cloud_shadow`;
+const LEGACY_CLOUD_SAVE_KEY = CLOUD_SAVE_KEY;
 
 export interface CloudSyncResult {
     success: boolean;
@@ -20,6 +21,41 @@ export class CloudSaveManager {
 
     private static getShadowKey(openId: string): string {
         return openId ? `${CLOUD_SHADOW_KEY}_${openId}` : CLOUD_SHADOW_KEY;
+    }
+
+    private static normalizeOpenId(openId: string): string {
+        return openId.replace(/[^a-zA-Z0-9_-]/g, '');
+    }
+
+    private static getCloudSaveKey(openId: string): string {
+        const safeOpenId = this.normalizeOpenId(openId);
+        return safeOpenId ? `${CLOUD_SAVE_KEY}_${safeOpenId}` : CLOUD_SAVE_KEY;
+    }
+
+    private static recordBelongsToOpenId(record: Record<string, unknown>, openId: string): boolean {
+        if (!openId) {
+            return false;
+        }
+
+        if (record.ownerOpenId === openId) {
+            return true;
+        }
+
+        if (record._openid === openId) {
+            return true;
+        }
+
+        const value = record.value;
+        if (typeof value !== 'string') {
+            return false;
+        }
+
+        try {
+            const parsed = JSON.parse(value) as PlayerSaveData;
+            return parsed.social?.openId === openId;
+        } catch {
+            return false;
+        }
     }
 
     static async syncOnLogin(): Promise<CloudSyncResult> {
@@ -57,12 +93,12 @@ export class CloudSaveManager {
         try {
             const db = cloud.database();
             const col = db.collection('kv_saves');
-            const key = CLOUD_SAVE_KEY;
+            const key = this.getCloudSaveKey(openId);
             const record = { key, value: payload, updatedAt: Date.now(), ownerOpenId: openId };
 
-            // User isolation must be enforced by collection permissions: creator-only read/write.
-            // Keep the client query on business key only to avoid trusting client-provided identity.
-            const queryRes = await col.where({ key }).limit(1).get();
+            // Use a user-scoped key and owner marker so records stay isolated even if
+            // the cloud collection permission is temporarily misconfigured.
+            const queryRes = await col.where({ key, ownerOpenId: openId }).limit(1).get();
             if (queryRes.data.length > 0) {
                 console.log('[CloudSaveManager] uploadSave: updating existing record');
                 await col.doc(queryRes.data[0]._id).update({ data: record });
@@ -96,16 +132,25 @@ export class CloudSaveManager {
         try {
             const db = cloud.database();
             const col = db.collection('kv_saves');
-            const key = CLOUD_SAVE_KEY;
+            const key = this.getCloudSaveKey(openId);
 
-            // User isolation must be enforced by collection permissions: creator-only read/write.
-            const res = await col.where({ key }).limit(1).get();
+            const res = await col.where({ key, ownerOpenId: openId }).limit(1).get();
             console.log('[CloudSaveManager] downloadSave: query result count:', res.data.length, 'openid:', openId);
-            if (!res.data.length) {
+            let record = res.data[0] as Record<string, unknown> | undefined;
+
+            if (!record) {
+                // One-time compatibility for records created before v0.5.3-hotfix-2.
+                // Never import a legacy shared record unless it explicitly belongs to this user.
+                const legacyRes = await col.where({ key: LEGACY_CLOUD_SAVE_KEY }).limit(3).get();
+                record = (legacyRes.data as Record<string, unknown>[]).find((item) => this.recordBelongsToOpenId(item, openId));
+                console.log('[CloudSaveManager] downloadSave: legacy query result count:', legacyRes.data.length, 'matched:', Boolean(record), 'openid:', openId);
+            }
+
+            if (!record) {
                 return null;
             }
 
-            const value = res.data[0].value;
+            const value = record.value;
             if (typeof value === 'string') {
                 const parsed = StorageManager.normalizeSaveData(JSON.parse(value) as PlayerSaveData);
                 parsed.social.openId = openId;

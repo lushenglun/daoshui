@@ -618,7 +618,7 @@ export const COLOR_PALETTES = {
 - v0.3 已接入微信测试底座：
   - `WXAPI` 封装登录、分享、开放数据域消息、用户云排行榜字段写入。
   - `SDKManager` 启动后静默登录并触发云存档同步，失败不阻塞试玩。
-  - `CloudSaveManager` 通过 `getOpenId` 云函数获取用户标识，支持编辑器本地 shadow 存档降级；云端读写依赖 `kv_saves` 创建者权限隔离，合并策略按进度/星级/成就取安全并集。
+  - `CloudSaveManager` 通过 `getOpenId` 云函数获取用户标识，支持编辑器本地 shadow 存档降级；云端读写使用用户级 `key`（`water_sort_save_v1_cloud_<openid>`）+ `ownerOpenId` 隔离，`kv_saves` 创建者权限作为安全底线，合并策略按进度/星级/成就取安全并集。
   - `ShareManager` 支持主菜单分享求助每日首次 50 金币奖励，以及结算分享炫耀。
   - `RankManager` 支持好友排行榜入口与编辑器预览数据，微信环境会向开放数据域发送绘制消息。
 - v0.3 QA 修复记录（2026-05-01）：
@@ -638,7 +638,7 @@ export const COLOR_PALETTES = {
 - 后续接入美术资源时，建议将运行时绘制的按钮、瓶子、弹窗逐步替换为 Prefab，但保持 `LevelManager` 与 `WaterSortRules` 不依赖 UI。
 - Cocos 资源挂接依赖 `.meta` UUID；如果脚本 `.meta` 被编辑器重建，需要检查 `Gameplay.scene` 中 `GameManager` 的组件引用是否仍有效。
 - `LevelManager` 负责关卡数据、合法目标枚举和章节缓存；UI 层不应直接读取其私有字段。
-- 当前本地存档基础键为 `water_sort_save_v1`；微信登录成功后会切换到 `water_sort_save_v1_${openid}`，避免不同用户共用本地/云端存档。开发期优先使用 GM 面板或微信开发者工具存储面板重置当前用户存档，避免手动清错缓存。
+- 当前本地存档基础键为 `water_sort_save_v1`；微信登录成功后会切换到 `water_sort_save_v1_${openid}`，云端集合 `kv_saves` 中当前用户记录使用 `water_sort_save_v1_cloud_<openid>`。开发期优先使用 GM 面板或微信开发者工具存储/数据库面板重置当前用户存档，避免手动清错缓存。
 - 弹窗状态回退要显式允许来源状态，例如局内 `PAUSED -> SETTINGS -> PAUSED`。不要只允许 `PLAYING` 打开暂停弹窗，否则设置面板关闭会被状态机拦截。
 - 设置面板开关必须局部刷新，不应通过重建整个 SettingsPanel 更新状态，否则每次切换都会触发弹窗入场动画。
 - 弹窗遮罩、弹窗主体和 GM 摘要等非按钮区域必须吞掉触摸事件，避免事件穿透到底层主菜单/选关按钮。
