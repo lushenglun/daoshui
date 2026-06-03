@@ -51,6 +51,8 @@
 - [ ] **杀进程重启**：进度与 GM 摘要一致，无异常回滚。
 - [ ] **仅清本地存储**（模拟换端）：重启后能从云端恢复到最新进度；本地无持久进度也不影响恢复。
 - [ ] **云端删档**：删除当前 `_openid` 的 `kv_saves` 记录后，重启应以全新云档开始。
+- [ ] **多账号隔离**：3 个真实微信账号分别进入后，`kv_saves` 至少出现 3 条不同记录；`key` 形如 `water_sort_save_v1_cloud_<openid>`，且 `ownerOpenId` 分别对应不同账号。
+- [ ] **旧共享档防串档**：新账号无匹配 `ownerOpenId` 时必须创建新云档，不得读取旧的共享 `water_sort_save_v1_cloud` 记录。
 
 ### 2.4 分享
 
@@ -82,11 +84,17 @@
 
 - [ ] 集合 **`kv_saves`** 已创建。
 - [ ] **权限与安全规则**：`kv_saves` 必须设置为仅创建者可读写/仅创建者可写读自身数据，**禁止**误配为全员可读写；这是 V0.5.3 存档隔离的上线阻断项。
+- [ ] **存档记录结构**：新记录必须同时包含用户级 `key`、`ownerOpenId`、`value`、`updatedAt`；禁止多个账号持续更新同一条 `water_sort_save_v1_cloud` 旧记录。
 - [ ] （若使用）`rank_data` 等与排行相关的集合：若体验版未使用真实排行，可暂不对外说明或保持最小权限。
 
 ### 3.3 构建目录中的云函数
 
 - V0.5.3 必须保留并部署 `cloudfunctions/getOpenId`。每次 Cocos 重新构建后，确认 `build/wechatgame/project.config.json` 含 `cloudfunctionRoot`，且 `build/wechatgame/cloudfunctions/getOpenId` 存在。
+- **上线前固定提醒**：Cocos Creator 的微信小游戏构建会覆盖 `build/wechatgame`，可能清掉云函数目录与 `cloudfunctionRoot`。每次 build 完必须重新确认/补回：
+  - `build/wechatgame/cloudfunctions/getOpenId/index.js`
+  - `build/wechatgame/cloudfunctions/getOpenId/package.json`
+  - `build/wechatgame/project.config.json` 中的 `"cloudfunctionRoot": "cloudfunctions/"`
+- 在微信开发者工具中看到 `cloudfunctions/getOpenId` 后，右键该云函数执行上传/部署依赖；控制台已有调用成功，只能说明当前云环境存在函数，不代表新构建产物里仍保留云函数目录。
 
 ---
 
@@ -102,6 +110,7 @@
 ### 4.2 产物自检
 
 - [ ] 用 **微信开发者工具** 打开构建目录，能编译运行。
+- [ ] 左侧资源管理器能看到 `cloudfunctions/getOpenId`；若看不到，先补回构建目录和 `cloudfunctionRoot` 再上传。
 - [ ] `project.config.json` 中 **AppID**、**基础库**要求与后台一致。
 - [ ] 首包体积与分包策略符合平台提示（关注单文件过大警告是否可接受）。
 - [ ] 记录本次构建的 **Git commit id**，写入体验版发版说明或内部台账。
