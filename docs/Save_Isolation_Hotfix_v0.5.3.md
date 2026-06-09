@@ -1,4 +1,4 @@
-# V0.5.3 Save Isolation Hotfix
+# V0.5.4 Save Isolation Hotfix
 
 ## Background
 
@@ -42,7 +42,7 @@ db.collection('kv_saves').where({ key, ownerOpenId: openId }).limit(1).get()
 
 ## Deployment Notes
 
-Before uploading V0.5.3:
+Before uploading V0.5.4:
 
 1. After every Cocos Creator WeChat build, re-check the generated project at `build/wechatgame`.
 2. Cocos build may overwrite the generated folder. Confirm or restore:

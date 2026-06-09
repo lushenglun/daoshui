@@ -5,7 +5,7 @@
 
 export const GAME_CONFIG = {
     /** 游戏版本号 */
-    VERSION: '0.5.3',
+    VERSION: '0.5.4',
 
     /** 构建与发布配置 */
     BUILD: {

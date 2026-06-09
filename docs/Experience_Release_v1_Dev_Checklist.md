@@ -83,13 +83,13 @@
 ### 3.2 云数据库
 
 - [ ] 集合 **`kv_saves`** 已创建。
-- [ ] **权限与安全规则**：`kv_saves` 必须设置为仅创建者可读写/仅创建者可写读自身数据，**禁止**误配为全员可读写；这是 V0.5.3 存档隔离的上线阻断项。
+- [ ] **权限与安全规则**：`kv_saves` 必须设置为仅创建者可读写/仅创建者可写读自身数据，**禁止**误配为全员可读写；这是 V0.5.4 存档隔离的上线阻断项。
 - [ ] **存档记录结构**：新记录必须同时包含用户级 `key`、`ownerOpenId`、`value`、`updatedAt`；禁止多个账号持续更新同一条 `water_sort_save_v1_cloud` 旧记录。
 - [ ] （若使用）`rank_data` 等与排行相关的集合：若体验版未使用真实排行，可暂不对外说明或保持最小权限。
 
 ### 3.3 构建目录中的云函数
 
-- V0.5.3 必须保留并部署 `cloudfunctions/getOpenId`。每次 Cocos 重新构建后，确认 `build/wechatgame/project.config.json` 含 `cloudfunctionRoot`，且 `build/wechatgame/cloudfunctions/getOpenId` 存在。
+- V0.5.4 必须保留并部署 `cloudfunctions/getOpenId`。每次 Cocos 重新构建后，确认 `build/wechatgame/project.config.json` 含 `cloudfunctionRoot`，且 `build/wechatgame/cloudfunctions/getOpenId` 存在。
 - **上线前固定提醒**：Cocos Creator 的微信小游戏构建会覆盖 `build/wechatgame`，可能清掉云函数目录与 `cloudfunctionRoot`。每次 build 完必须重新确认/补回：
   - `build/wechatgame/cloudfunctions/getOpenId/index.js`
   - `build/wechatgame/cloudfunctions/getOpenId/package.json`

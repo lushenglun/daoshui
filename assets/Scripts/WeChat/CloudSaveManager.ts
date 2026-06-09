@@ -160,7 +160,7 @@ export class CloudSaveManager {
             let record = res.data[0] as Record<string, unknown> | undefined;
 
             if (!record) {
-                // One-time compatibility for records created before v0.5.3-hotfix-2.
+                // One-time compatibility for records created before v0.5.4.
                 // Never import a legacy shared record unless it explicitly belongs to this user.
                 const legacyRes = await col.where({ key: LEGACY_CLOUD_SAVE_KEY }).limit(3).get();
                 record = (legacyRes.data as Record<string, unknown>[]).find((item) => this.recordBelongsToOpenId(item, openId));
