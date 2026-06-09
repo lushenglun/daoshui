@@ -16,7 +16,7 @@
 | 核心玩法 | 选关、倒水、通关结算、暂停、设置（与 v0.2 一致的主链路） |
 | 微信登录 | `wx.login` 获取 code；失败有提示，不阻塞本地试玩 |
 | 云开发初始化 | `wx.cloud.init` 启动期调用成功，无「please call wx.cloud.init first」 |
-| 云存档（当前实现） | `getOpenId` 云函数获取用户标识；客户端 **`wx.cloud.database()`** 读写集合 **`kv_saves`**（按业务 key 查询，依赖集合创建者权限隔离） |
+| 云存档（当前实现） | `getOpenId` 云函数获取用户标识；客户端 **`wx.cloud.database()`** 读写集合 **`kv_saves`**；云端是唯一权威持久化来源 |
 | 分享 | 主菜单「分享求助」、结算「分享炫耀」；主菜单侧含**每日首次**金币奖励与防刷逻辑 |
 | 其他 | GM、签到、商店/挑战等入口若为占位或弱依赖，以**不崩溃、无误导严重文案**为准 |
 
@@ -46,10 +46,10 @@
 
 ### 2.3 云存档
 
-- [ ] **首次无云档**：提示或日志表明用本地初始化云端（与产品文案一致即可）。
+- [ ] **首次无云档**：云端创建当前用户的新记录；不应从旧本地存档恢复用户进度。
 - [ ] **通关或改设置后**：`kv_saves` 中对应用户记录 **`updatedAt` / `value`** 有更新。
 - [ ] **杀进程重启**：进度与 GM 摘要一致，无异常回滚。
-- [ ] **仅清本地存储**（模拟换端）：重启后能从云端恢复到最新进度（依赖库权限与网络）。
+- [ ] **仅清本地存储**（模拟换端）：重启后能从云端恢复到最新进度；本地无持久进度也不影响恢复。
 - [ ] **云端删档**：删除当前 `_openid` 的 `kv_saves` 记录后，重启应以全新云档开始。
 - [ ] **多账号隔离**：3 个真实微信账号分别进入后，`kv_saves` 至少出现 3 条不同记录；`key` 形如 `water_sort_save_v1_cloud_<openid>`，且 `ownerOpenId` 分别对应不同账号。
 - [ ] **旧共享档防串档**：新账号无匹配 `ownerOpenId` 时必须创建新云档，不得读取旧的共享 `water_sort_save_v1_cloud` 记录。
@@ -83,13 +83,13 @@
 ### 3.2 云数据库
 
 - [ ] 集合 **`kv_saves`** 已创建。
-- [ ] **权限与安全规则**：`kv_saves` 必须设置为仅创建者可读写/仅创建者可写读自身数据，**禁止**误配为全员可读写；这是 V0.5.3 存档隔离的上线阻断项。
+- [ ] **权限与安全规则**：`kv_saves` 必须设置为仅创建者可读写/仅创建者可写读自身数据，**禁止**误配为全员可读写；这是 V0.5.4 存档隔离的上线阻断项。
 - [ ] **存档记录结构**：新记录必须同时包含用户级 `key`、`ownerOpenId`、`value`、`updatedAt`；禁止多个账号持续更新同一条 `water_sort_save_v1_cloud` 旧记录。
 - [ ] （若使用）`rank_data` 等与排行相关的集合：若体验版未使用真实排行，可暂不对外说明或保持最小权限。
 
 ### 3.3 构建目录中的云函数
 
-- V0.5.3 必须保留并部署 `cloudfunctions/getOpenId`。每次 Cocos 重新构建后，确认 `build/wechatgame/project.config.json` 含 `cloudfunctionRoot`，且 `build/wechatgame/cloudfunctions/getOpenId` 存在。
+- V0.5.4 必须保留并部署 `cloudfunctions/getOpenId`。每次 Cocos 重新构建后，确认 `build/wechatgame/project.config.json` 含 `cloudfunctionRoot`，且 `build/wechatgame/cloudfunctions/getOpenId` 存在。
 - **上线前固定提醒**：Cocos Creator 的微信小游戏构建会覆盖 `build/wechatgame`，可能清掉云函数目录与 `cloudfunctionRoot`。每次 build 完必须重新确认/补回：
   - `build/wechatgame/cloudfunctions/getOpenId/index.js`
   - `build/wechatgame/cloudfunctions/getOpenId/package.json`

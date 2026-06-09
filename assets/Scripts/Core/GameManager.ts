@@ -1066,7 +1066,7 @@ export class GameManager extends Component {
 
         this.clearPopup();
         this.createPanel(this.popupLayer, Vec3.ZERO, this.canvasSize.width, this.canvasSize.height, '#000000', 0, 92, true);
-        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 680, '#FFFFFF', 24, 255, true);
+        const panel = this.createPanel(this.popupLayer, Vec3.ZERO, 560, 720, '#FFFFFF', 24, 255, true);
         panel.setScale(new Vec3(0.82, 0.82, 1));
         this.createLabel(panel, '每日签到', 42, new Vec3(0, 274, 0), new Color(45, 52, 54));
         this.createLabel(panel, `连续签到 ${save.dailyCheckIn.consecutiveDays} 天  加成 x${multiplier}`, 24, new Vec3(0, 224, 0), new Color(83, 103, 112), 480);
@@ -1097,7 +1097,7 @@ export class GameManager extends Component {
                 void this.makeupYesterdayCheckIn();
             }, new Color(45, 52, 54));
         }
-        this.createButton(panel, '关闭', new Vec3(0, -316, 0), 180, 48, '#E8F6F3', () => this.clearPopup(), new Color(45, 52, 54));
+        this.createButton(panel, '关闭', new Vec3(0, -314, 0), 180, 48, '#E8F6F3', () => this.clearPopup(), new Color(45, 52, 54));
 
         tween(panel).to(0.22, { scale: Vec3.ONE }).start();
     }
@@ -1636,7 +1636,7 @@ export class GameManager extends Component {
     }
 
     private safeClear(node: Node | null): void {
-        if (!node) {
+        if (!node || !node.children) {
             return;
         }
         node.children.slice().forEach((child) => this.safeDestroyNode(child));
@@ -1644,6 +1644,9 @@ export class GameManager extends Component {
     }
 
     private safeDestroyNode(node: Node): void {
+        if (!node || !node.children) {
+            return;
+        }
         Tween.stopAllByTarget(node);
         node.children.slice().forEach((child) => this.safeDestroyNode(child));
         node.destroy();

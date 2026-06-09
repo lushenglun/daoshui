@@ -1,4 +1,4 @@
-# V0.5.3 Save Isolation Hotfix
+# V0.5.4 Save Isolation Hotfix
 
 ## Background
 
@@ -24,10 +24,11 @@ If the cloud database permission is too broad, this can return another user's re
 1. Add cloud function `getOpenId`.
 2. Call the cloud function after `wx.login`.
 3. Store `social.openId` in save data.
-4. Scope local save keys by openid:
-   - legacy key: `water_sort_save_v1`
-   - scoped key: `water_sort_save_v1_${openid}`
-   - first login on an upgraded client migrates the current legacy local save into the scoped key when no scoped save exists yet.
+4. Enable cloud-authoritative save mode:
+   - `GAME_CONFIG.SAVE.CLOUD_AUTHORITATIVE = true`
+   - After openid is resolved, localStorage is no longer used as the persistent source for user progress.
+   - If a cloud record exists, it directly replaces the runtime save.
+   - If no cloud record exists, the current runtime default save initializes a new cloud record.
 5. Cloud save reads/writes use a user-scoped business `key` plus `ownerOpenId`:
 
 ```ts
@@ -36,12 +37,12 @@ db.collection('kv_saves').where({ key, ownerOpenId: openId }).limit(1).get()
 ```
 
 6. Store `ownerOpenId` as a second isolation marker. Collection permissions must still be restricted, but save isolation must not rely on permissions alone.
-7. If openid cannot be resolved, cloud save read/write is skipped and only local shadow save is kept.
+7. If openid cannot be resolved, cloud save read/write is skipped. In cloud-authoritative mode, this data is only a runtime fallback and should not be treated as a durable save.
 8. Legacy records using the old shared key are read only when `ownerOpenId`, `_openid`, or `value.social.openId` explicitly matches the current openid. Never import a shared legacy record for a new user.
 
 ## Deployment Notes
 
-Before uploading V0.5.3:
+Before uploading V0.5.4:
 
 1. After every Cocos Creator WeChat build, re-check the generated project at `build/wechatgame`.
 2. Cocos build may overwrite the generated folder. Confirm or restore:
@@ -64,6 +65,6 @@ Before uploading V0.5.3:
 
 ## Risk Notes
 
-- Some users who previously received another user's public cloud save may no longer see that progress after the fix. This is intentional because the previous progress was not reliably attributable to them.
+- Some users who previously relied on local-only progress may no longer see that progress once cloud-authoritative mode is enabled and no cloud record exists. This is intentional for the new policy: cloud is the only durable save.
 - Existing valid records created with the old shared key are migrated only if they explicitly match the current openid.
 - If `kv_saves` is accidentally configured as public read/write, user-scoped keys reduce cross-user overwrite risk, but the permission setting is still a release blocker.
