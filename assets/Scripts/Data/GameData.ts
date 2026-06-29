@@ -21,6 +21,7 @@ export interface PlayerSaveData {
     version: number;
     lastSaveTime: number;
     currentLevel: number;
+    lastPlayedLevel: number;
     completedLevels: number[];
     levelStars: Record<number, number>;
     coins: number;
@@ -88,6 +89,7 @@ export function createDefaultSaveData(): PlayerSaveData {
         version: 1,
         lastSaveTime: Date.now(),
         currentLevel: 1,
+        lastPlayedLevel: 1,
         completedLevels: [],
         levelStars: {},
         coins: 0,

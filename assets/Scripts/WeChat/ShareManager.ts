@@ -41,8 +41,10 @@ export class ShareManager {
             return { success: true, rewarded: false, message: '今日首次分享奖励已领取，不重复发放。' };
         }
 
-        const title = this.buildTitle(scene, context);
-        const query = `scene=${scene}&level=${context.levelId ?? StorageManager.load().currentLevel}`;
+        const save = StorageManager.load();
+        const levelId = context.levelId ?? StorageManager.getResumeLevel(save);
+        const title = this.buildTitle(scene, { ...context, levelId });
+        const query = `scene=${scene}&level=${levelId}`;
         const success = await WXAPI.shareAppMessage({ title, query });
         if (!success) {
             return { success: false, rewarded: false, message: '分享失败，请稍后重试。' };
@@ -57,8 +59,9 @@ export class ShareManager {
         const templates = SHARE_TEMPLATES[scene];
         const template = templates[Math.floor(Math.random() * templates.length)];
         const save = StorageManager.load();
+        const levelId = context.levelId ?? StorageManager.getResumeLevel(save);
         return template
-            .replace('{level}', String(context.levelId ?? save.currentLevel))
+            .replace('{level}', String(levelId))
             .replace('{steps}', String(context.steps ?? 0))
             .replace('{stars}', String(context.stars ?? 0));
     }

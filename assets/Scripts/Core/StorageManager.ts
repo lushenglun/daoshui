@@ -103,6 +103,20 @@ export class StorageManager {
         this.save(this.normalizeSaveData(this.deepMerge(createDefaultSaveData(), data)));
     }
 
+    static getResumeLevel(data = this.load()): number {
+        const normalized = this.normalizeSaveData(data);
+        const requested = Math.floor(Number(normalized.lastPlayedLevel || normalized.currentLevel || 1));
+        return Math.max(1, Math.min(requested, normalized.currentLevel));
+    }
+
+    static setLastPlayedLevel(levelId: number): PlayerSaveData {
+        const data = this.load();
+        const safeLevel = Math.max(1, Math.floor(Number(levelId) || 1));
+        data.lastPlayedLevel = Math.min(safeLevel, Math.max(1, data.currentLevel));
+        this.save(data);
+        return data;
+    }
+
     static mergeSaveData(local: PlayerSaveData, remote: PlayerSaveData): PlayerSaveData {
         local = this.normalizeSaveData(local);
         remote = this.normalizeSaveData(remote);
@@ -111,6 +125,7 @@ export class StorageManager {
         const base = this.deepMerge(merged, newerBase);
 
         base.currentLevel = Math.max(local.currentLevel, remote.currentLevel);
+        base.lastPlayedLevel = remote.lastSaveTime > local.lastSaveTime ? remote.lastPlayedLevel : local.lastPlayedLevel;
         base.coins = Math.max(local.coins, remote.coins);
         base.diamonds = Math.max(local.diamonds, remote.diamonds);
         base.completedLevels = Array.from(new Set([...local.completedLevels, ...remote.completedLevels])).sort((a, b) => a - b);
@@ -160,6 +175,32 @@ export class StorageManager {
 
     static normalizeSaveData(data: PlayerSaveData): PlayerSaveData {
         const defaultData = createDefaultSaveData();
+        data.completedLevels = Array.isArray(data.completedLevels)
+            ? Array.from(new Set(data.completedLevels
+                .map((levelId) => Math.floor(Number(levelId)))
+                .filter((levelId) => Number.isFinite(levelId) && levelId > 0)))
+                .sort((a, b) => a - b)
+            : [];
+
+        data.levelStars = data.levelStars && typeof data.levelStars === 'object' ? data.levelStars : {};
+        const normalizedStars: Record<number, number> = {};
+        Object.keys(data.levelStars).forEach((key) => {
+            const levelId = Math.floor(Number(key));
+            const stars = Math.max(0, Math.min(3, Math.floor(Number(data.levelStars[levelId]) || 0)));
+            if (Number.isFinite(levelId) && levelId > 0 && stars > 0) {
+                normalizedStars[levelId] = stars;
+            }
+        });
+        data.levelStars = normalizedStars;
+
+        const maxCompleted = data.completedLevels.reduce((max, levelId) => Math.max(max, levelId), 0);
+        const maxStarred = Object.keys(data.levelStars).reduce((max, key) => Math.max(max, Number(key)), 0);
+        const evidencedCurrentLevel = Math.max(1, maxCompleted + 1, maxStarred + 1);
+        const rawCurrentLevel = Math.max(1, Math.floor(Number(data.currentLevel) || 1));
+        data.currentLevel = Math.min(rawCurrentLevel, evidencedCurrentLevel);
+        const rawLastPlayedLevel = Math.max(1, Math.floor(Number(data.lastPlayedLevel || data.currentLevel) || 1));
+        data.lastPlayedLevel = Math.min(rawLastPlayedLevel, data.currentLevel);
+
         const rawThemes = data.unlockedThemes as unknown[];
         const themeMap: Record<string, string> = {
             '1': 'default',
@@ -310,6 +351,7 @@ export class StorageManager {
 
         data.levelStars[levelId] = Math.max(data.levelStars[levelId] ?? 0, stars);
         data.currentLevel = Math.max(data.currentLevel, levelId + 1);
+        data.lastPlayedLevel = data.currentLevel;
         data.coins = Math.min(GAME_CONFIG.ECONOMY.COIN_CAP, data.coins + coins);
         this.save(data);
 

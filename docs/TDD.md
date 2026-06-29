@@ -579,7 +579,7 @@ export const COLOR_PALETTES = {
 
 > 更新时间: 2026-04-30
 
-> 当前版本: v0.5.4 存档隔离热修复版
+> 当前版本: v0.5.5 继续关卡修复版
 
 ### 7.1 已完成
 
@@ -711,6 +711,7 @@ node "C:\ProgramData\cocos\editors\Creator\3.8.8\resources\app.asar.unpacked\nod
 - [x] **v0.5** 存档扩展：achievements / dailyChallenge / unlockedThemes / currentTheme / currentThemeId
 - [x] **v0.5.1** 审核准备：BUILD 配置化、发布版隐藏 GM、审核期隐藏广告入口
 - [x] **v0.5.4** 存档隔离热修复 + 内存泄漏修复 + 运行时 Bug 修复 + 云存档合并修复 + 反作弊加固 + 死代码清理
+- [x] **v0.5.5** 记录上次进入的普通关卡；首次点击开始游戏会先等待微信登录与云同步；读档时校正 `currentLevel` 与通关证据不一致的异常存档；关卡加载失败不再重置最高进度；分享关卡文案使用可信继续关卡
 - [ ] **v0.6** 真实广告切换 + 音频系统接入 + 端午节限时活动 + 好友助力 + 无限模式 + 新手引导优化 + 数据埋点
 
 ### v0.5 留存运营系统实现记录（2026-05-07）

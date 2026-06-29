@@ -5,16 +5,16 @@
 
 export const GAME_CONFIG = {
     /** 游戏版本号 */
-    VERSION: '0.5.4',
+    VERSION: '0.5.5',
 
     /** 构建与发布配置 */
     BUILD: {
         /** 是否为发布版本（true = 隐藏 GM 工具等开发功能） */
-        IS_RELEASE: true,
+        IS_RELEASE: false,
         /** 审核期间是否隐藏所有广告入口（流量主未开通前建议开启） */
-        HIDE_AD_ENTRIES_IN_REVIEW: true,
+        HIDE_AD_ENTRIES_IN_REVIEW: false,
         /** 总广告开关：true 时禁止所有真实/Mock 广告调用 */
-        DISABLE_ALL_ADS: true,
+        DISABLE_ALL_ADS: false,
     },
 
     /** 关卡相关 */
@@ -64,7 +64,7 @@ export const GAME_CONFIG = {
     /** 广告配置 */
     AD: {
         /** 是否启用 Mock 模式（流量主未开通时使用） */
-        MOCK_ENABLED: false,
+        MOCK_ENABLED: true,
         /** Mock 模式激励视频模拟时长（毫秒） */
         MOCK_REWARDED_DELAY: 1500,
         /** Mock 模式插屏模拟时长（毫秒） */

@@ -235,6 +235,7 @@ export class CloudSaveManager {
         base.coins = Math.max(local.coins, remote.coins);
         base.diamonds = Math.max(local.diamonds, remote.diamonds);
         base.currentLevel = Math.max(local.currentLevel, remote.currentLevel);
+        base.lastPlayedLevel = useRemote ? remote.lastPlayedLevel : local.lastPlayedLevel;
 
         base.statistics = {
             totalPlayTime: Math.max(local.statistics.totalPlayTime, remote.statistics.totalPlayTime),

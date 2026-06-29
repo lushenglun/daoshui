@@ -5,6 +5,8 @@ import { WXAPI } from '../WeChat/WXAPI';
 
 export class SDKManager {
     private static loginStarted = false;
+    private static loginPromise: Promise<boolean> | null = null;
+    private static syncedOnce = false;
     private static initialized = false;
     private static timeouts: number[] = [];
 
@@ -31,42 +33,69 @@ export class SDKManager {
         this.timeouts = [];
         this.initialized = false;
         this.loginStarted = false;
+        this.loginPromise = null;
+        this.syncedOnce = false;
     }
 
     static async loginAndSync(): Promise<boolean> {
+        if (this.loginPromise) {
+            return this.loginPromise;
+        }
+
+        this.loginPromise = this.performLoginAndSync();
+        try {
+            const success = await this.loginPromise;
+            this.syncedOnce = success || this.syncedOnce;
+            return success;
+        } finally {
+            this.loginPromise = null;
+        }
+    }
+
+    static async ensureLoginAndSync(): Promise<boolean> {
+        if (this.syncedOnce) {
+            return true;
+        }
+        return this.loginAndSync();
+    }
+
+    private static async performLoginAndSync(): Promise<boolean> {
         if (this.loginStarted) {
             return false;
         }
 
         this.loginStarted = true;
-        const result = await WXAPI.login();
+        try {
+            WXAPI.initCloud();
+            const result = await WXAPI.login();
 
-        if (!result.success) {
+            if (!result.success) {
+                const save = StorageManager.load();
+                save.social.lastLoginError = result.error;
+                StorageManager.save(save);
+                console.warn('[SDKManager] login failed:', result.error);
+                WXAPI.showToast('登录失败，可在设置中重试', 'none');
+                return false;
+            }
+
+            console.log(`[SDKManager] login code: ${result.code}`);
+            if (result.openId) {
+                StorageManager.setUserScope(result.openId);
+            } else {
+                console.warn('[SDKManager] openid missing, cloud save sync will be skipped.');
+            }
+
             const save = StorageManager.load();
-            save.social.lastLoginError = result.error;
+            save.social.loginCode = result.code;
+            save.social.openId = result.openId;
+            save.social.lastLoginTime = Date.now();
+            save.social.lastLoginError = '';
             StorageManager.save(save);
-            console.warn('[SDKManager] login failed:', result.error);
-            WXAPI.showToast('登录失败，可在设置中重试', 'none');
+            const syncResult = await CloudSaveManager.syncOnLogin();
+            console.log('[SDKManager] login ok, sync:', syncResult.message);
+            return true;
+        } finally {
             this.loginStarted = false;
-            return false;
         }
-
-        console.log(`[SDKManager] login code: ${result.code}`);
-        if (result.openId) {
-            StorageManager.setUserScope(result.openId);
-        } else {
-            console.warn('[SDKManager] openid missing, cloud save sync will be skipped.');
-        }
-
-        const save = StorageManager.load();
-        save.social.loginCode = result.code;
-        save.social.openId = result.openId;
-        save.social.lastLoginTime = Date.now();
-        save.social.lastLoginError = '';
-        StorageManager.save(save);
-        const syncResult = await CloudSaveManager.syncOnLogin();
-        console.log('[SDKManager] login ok, sync:', syncResult.message);
-        this.loginStarted = false;
-        return true;
     }
 }

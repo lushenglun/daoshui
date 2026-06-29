@@ -122,9 +122,7 @@ export class GameManager extends Component {
         this.createLabel(this.viewRoot, '倒水乐乐乐', 62, new Vec3(0, 360, 0), new Color(45, 52, 54));
         this.createLabel(this.viewRoot, '把同色液体倒在一起', 26, new Vec3(0, 300, 0), new Color(83, 103, 112));
         this.createButton(this.viewRoot, '开始游戏', new Vec3(0, 165, 0), 280, 86, '#4ECDC4', () => {
-            const save = StorageManager.load();
-            this.dailyChallengeMode = false;
-            this.startLevel(save.currentLevel);
+            void this.startResumeLevel();
         });
         this.createButton(this.viewRoot, '选择关卡', new Vec3(0, 56, 0), 240, 68, '#45B7D1', () => {
             void this.showLevelSelect();
@@ -206,6 +204,13 @@ export class GameManager extends Component {
         }
     }
 
+    private async startResumeLevel(): Promise<void> {
+        this.dailyChallengeMode = false;
+        await SDKManager.ensureLoginAndSync();
+        const save = StorageManager.load();
+        await this.startLevel(StorageManager.getResumeLevel(save));
+    }
+
     private async startLevel(levelId: number): Promise<void> {
         this.state = GameState.LOADING;
         this.selectedBottle = -1;
@@ -226,22 +231,33 @@ export class GameManager extends Component {
 
         try {
             await this.levelManager.loadLevel(levelId);
+            if (!this.dailyChallengeMode) {
+                StorageManager.setLastPlayedLevel(levelId);
+                void CloudSaveManager.uploadSave();
+            }
             this.state = GameState.PLAYING;
             void AudioManager.playBgm('bgm_gameplay');
             this.buildGameplayView();
             this.refreshGameplay();
         } catch (error) {
             console.error('[GameManager] load level failed:', levelId, error);
-            if (levelId !== 1) {
-                const save = StorageManager.load();
-                save.currentLevel = 1;
-                StorageManager.save(save);
-                await this.startLevel(1);
-                return;
+            const save = StorageManager.load();
+            const fallbackLevel = Math.max(1, Math.min(StorageManager.getResumeLevel(save), this.maxBundledLevelId));
+            if (!this.dailyChallengeMode && fallbackLevel !== levelId) {
+                StorageManager.setLastPlayedLevel(fallbackLevel);
+                void CloudSaveManager.uploadSave();
             }
             this.clearView();
             this.createLabel(this.viewRoot, '关卡加载失败', 36, new Vec3(0, 60, 0), new Color(220, 80, 80));
             this.createLabel(this.viewRoot, String(error), 18, new Vec3(0, 8, 0), new Color(120, 70, 70), 620);
+            if (fallbackLevel !== levelId) {
+                this.createButton(this.viewRoot, '进入可用关卡', new Vec3(0, -50, 0), 220, 64, '#4ECDC4', () => {
+                    this.dailyChallengeMode = false;
+                    void this.startLevel(fallbackLevel);
+                });
+                this.createButton(this.viewRoot, '返回', new Vec3(0, -130, 0), 180, 64, '#FFFFFF', () => this.showMainMenu());
+                return;
+            }
             this.createButton(this.viewRoot, '返回', new Vec3(0, -50, 0), 180, 64, '#4ECDC4', () => this.showMainMenu());
         }
     }
@@ -881,7 +897,7 @@ export class GameManager extends Component {
 
     private async handleMainShare(): Promise<void> {
         const save = StorageManager.load();
-        const result = await ShareManager.share('main_help', { levelId: save.currentLevel });
+        const result = await ShareManager.share('main_help', { levelId: StorageManager.getResumeLevel(save) });
         this.syncShareAchievementProgress();
         WXAPI.showToast(result.message, result.rewarded ? 'success' : 'none');
         this.showMainMenu();
